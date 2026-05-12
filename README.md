@@ -5,6 +5,8 @@ AWS CDK app that implements the architecture in **[`code_generation_context.md`]
 1. **Natural language** (or passthrough JSON) → **`POST /intent`** → **structured `StructuredQueryIntent`** (no raw CloudWatch Insights from “AI”).
 2. **Structured intent** → **`POST /query/build`** → **domain query builders** → **Logs Insights query string** + **X-Ray filter expression** + metadata for **Grafana** / operators.
 
+**Developer guide (CDK wiring, contracts, extension patterns, curl):** **[README-dev.md](./README-dev.md)**.
+
 ## Layout
 
 | Path | Role |
