@@ -5,7 +5,9 @@ AWS CDK app that implements the architecture in **[`code_generation_context.md`]
 1. **Natural language** (or passthrough JSON) → **`POST /intent`** → **structured `StructuredQueryIntent`** (no raw CloudWatch Insights from “AI”).
 2. **Structured intent** → **`POST /query/build`** → **domain query builders** → **Logs Insights query string** + **X-Ray filter expression** + metadata for **Grafana** / operators.
 
-**Developer guide:** **[README-dev.md](./README-dev.md)** · **Testing:** **[README-test.md](./README-test.md)** · **LocalStack:** **[LOCALSTACK.md](./LOCALSTACK.md)** · **Windows CDK bundling errors:** **[WINDOWS-CDK-BUNDLING.md](./WINDOWS-CDK-BUNDLING.md)**
+**Developer guide:** **[README-dev.md](./README-dev.md)** · **LocalStack:** **[LOCALSTACK.md](./LOCALSTACK.md)** · **Windows CDK bundling:** **[WINDOWS-CDK-BUNDLING.md](./WINDOWS-CDK-BUNDLING.md)**
+
+**Testing:** **[README-test.md](./README-test.md)** — **Unit:** `npm test` or `npm run test:watch`. **E2E:** run `npm run test:e2e:install` once; deploy the HTTP API (e.g. `npm run deploy:local`); set **`PLAYWRIGHT_API_BASE_URL`** to **HttpApiUrl** (or run **`npm run playwright:print-env`** and paste the printed line); then **`npm run test:e2e`** (or **`npm run test:e2e:ui`**).
 
 ## Layout
 
@@ -48,8 +50,11 @@ npm run synth:local         # synth only, stage=local
 If **`npm run synth:local`** fails on **Windows** with **PowerShell / CLR / esbuild** during **“Bundling asset …”**, start **Docker Desktop** and run **`npm run synth:local:docker`** (or see **[WINDOWS-CDK-BUNDLING.md](./WINDOWS-CDK-BUNDLING.md)**).
 
 ```bash
-npm run deploy:local        # LocalStack: bootstrap + deploy (see LOCALSTACK.md)
-npm run destroy:local       # tear down LocalStack stack
+npm run deploy:local           # LocalStack: bootstrap + deploy (see LOCALSTACK.md)
+npm run test:e2e:install       # once per machine: Playwright Chromium
+npm run playwright:print-env   # copy printed PLAYWRIGHT_API_BASE_URL into your shell, then:
+npm run test:e2e               # E2E HTTP calls (skipped if PLAYWRIGHT_API_BASE_URL unset)
+npm run destroy:local          # tear down LocalStack stack
 ```
 
 Deploy script order: **`npm run build`** → **`cdk bootstrap`** (skippable with **`CDK_SKIP_BOOTSTRAP=1`**) → **`cdk synth`** → **`cdk deploy --app <repo>/cdk.out`** (single bundle pass, then publish to LocalStack). If deploy fails, see **[LOCALSTACK.md § Troubleshooting](./LOCALSTACK.md#3-troubleshooting-deploy--destroy)** (`DEPLOY_LOCAL_VERBOSE`, region, **`AWS_PROFILE`**).
