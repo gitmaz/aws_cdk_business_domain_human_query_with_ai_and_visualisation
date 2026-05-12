@@ -46,7 +46,12 @@ POST /query/build (body = structuredIntent)  →  { builtQueries: { logsInsights
 
 | Path | Role |
 | ---- | ---- |
-| [`bin/business-domain-human-query-app.ts`](./bin/business-domain-human-query-app.ts) | CDK **`App`**, reads **`stage`** from context, constructs stack **`env`** |
+| [`bin/business-domain-human-query-app.ts`](./bin/business-domain-human-query-app.ts) | CDK **`App`**, reads **`stage`** from context, constructs stack **`env`** via [`lib/stage-config.ts`](./lib/stage-config.ts) |
+| [`lib/stage-config.ts`](./lib/stage-config.ts) | **`local` \| `dev` \| `test` \| `prod`**; LocalStack dummy account vs **`CDK_DEFAULT_ACCOUNT`** |
+| [`scripts/deploy-local-localstack.mjs`](./scripts/deploy-local-localstack.mjs) | Bootstrap + **`cdk deploy`** against LocalStack (**`stage=local`**) |
+| [`scripts/destroy-local-localstack.mjs`](./scripts/destroy-local-localstack.mjs) | **`cdk destroy`** on LocalStack (**`stage=local`**) |
+| [`README-test.md`](./README-test.md) | Vitest + Playwright E2E |
+| [`LOCALSTACK.md`](./LOCALSTACK.md) | LocalStack install / env for **`deploy:local`** |
 | [`lib/business-domain-human-query-stack.ts`](./lib/business-domain-human-query-stack.ts) | **`BusinessDomainHumanQueryStack`**: HTTP API, two **`NodejsFunction`**s, outputs |
 | [`lambda/intent-extract/index.ts`](./lambda/intent-extract/index.ts) | **`POST /intent`** — demo NL → intent; optional **`structuredIntent`** passthrough |
 | [`lambda/query-dispatch/index.ts`](./lambda/query-dispatch/index.ts) | **`POST /query/build`** — validates body, calls **`buildQueriesForIntent`** |
@@ -62,25 +67,23 @@ POST /query/build (body = structuredIntent)  →  { builtQueries: { logsInsights
 
 ## CDK app entry and stage / env
 
-**File:** [`bin/business-domain-human-query-app.ts`](./bin/business-domain-human-query-app.ts)
+**Files:** [`bin/business-domain-human-query-app.ts`](./bin/business-domain-human-query-app.ts), [`lib/stage-config.ts`](./lib/stage-config.ts)
 
-**Intent:** single stack name suffix **`BusinessDomainHumanQuery-${stage}`**. For **`stage === "dev"`**, the template uses dummy account **`000000000000`** so **`cdk synth`** works without real credentials; for other stages, **`CDK_DEFAULT_ACCOUNT`** / **`CDK_DEFAULT_REGION`** are required for deploy.
+**Stages** (same convention as **`aws_cdk_invoice_processing_and_approval`**):
+
+- **`local`** — CDK **`env.account`** is **`000000000000`**; deploy with **`npm run deploy:local`** (sets **`AWS_ENDPOINT_URL`**, dummy keys, path-style S3). See **[LOCALSTACK.md](./LOCALSTACK.md)**.
+- **`dev`**, **`test`**, **`prod`** — **`env.account`** = **`CDK_DEFAULT_ACCOUNT`** (unset for synth-only if your CDK setup allows), **`env.region`** from **`CDK_DEFAULT_REGION`** / **`AWS_DEFAULT_REGION`** / default **`us-east-1`**.
+
+Default context stage when omitted is **`dev`** (`parseStage`).
 
 ```typescript
-const app = new cdk.App();
-const stage = (app.node.tryGetContext("stage") ?? "dev") as string;
-
-const env =
-  stage === "dev"
-    ? { account: "000000000000", region: process.env.CDK_DEFAULT_REGION ?? "us-east-1" }
-    : {
-        account: process.env.CDK_DEFAULT_ACCOUNT,
-        region: process.env.CDK_DEFAULT_REGION ?? "us-east-1",
-      };
+const stage = parseStage(app.node.tryGetContext("stage") as string | undefined);
+const env = stackEnvForStage(stage);
 
 new BusinessDomainHumanQueryStack(app, `BusinessDomainHumanQuery-${stage}`, {
   stage,
   env,
+  description: `Semantic analytics API (intent + query builders) — ${stage}`,
 });
 ```
 
@@ -94,7 +97,7 @@ new BusinessDomainHumanQueryStack(app, `BusinessDomainHumanQuery-${stage}`, {
 
 **Intent:**
 
-- **API Gateway HTTP API (v2)** with CORS for **`POST`** + **`OPTIONS`**.
+- **API Gateway HTTP API (v2)** with CORS for **`POST`** + **`OPTIONS`** (`allowOrigins: ["*"]` — tighten for **`prod`** if you expose browser clients).
 - Two **`NodejsFunction`**s (**esbuild** bundle, **`externalModules: ["@aws-sdk/*"]`**).
 - **X-Ray:** **`tracing: lambda.Tracing.ACTIVE`** on both functions.
 - **Environment:** comma-separated default log group lists from **`cdk.json` → `context.humanQuery`** (joined in the stack and passed as **`DEFAULT_*_LOG_GROUPS`** strings).
@@ -322,10 +325,15 @@ The stack reads these in [`lib/business-domain-human-query-stack.ts`](./lib/busi
 ```bash
 npm install
 npm run build
+npm test
 npx cdk synth -c stage=dev
 npx cdk bootstrap aws://ACCOUNT/REGION   # once per account/region
-npx cdk deploy --all -c stage=prod       # set CDK_DEFAULT_ACCOUNT / CDK_DEFAULT_REGION
+npm run deploy:prod                      # or deploy:dev / deploy:test
 ```
+
+**LocalStack:** `npm run deploy:local` / **`destroy:local`** — see **[LOCALSTACK.md](./LOCALSTACK.md)**.
+
+**Tests:** **[README-test.md](./README-test.md)** (Vitest + Playwright E2E).
 
 **Synth note:** **`NodejsFunction`** triggers esbuild bundling during synth; ensure Docker is available if the CDK bundling pipeline uses it (platform-dependent).
 
@@ -383,5 +391,7 @@ curl -sS -X POST "$API/query/build" \
 
 ## Related reading
 
-- [README.md](./README.md) — quick start and API overview  
+- [README.md](./README.md) — quick start, stages, API overview  
+- [README-test.md](./README-test.md) — unit tests and Playwright E2E  
+- [LOCALSTACK.md](./LOCALSTACK.md) — `stage=local` deploy  
 - [code_generation_context.md](./code_generation_context.md) — architecture intent and Grafana / X-Ray narrative  

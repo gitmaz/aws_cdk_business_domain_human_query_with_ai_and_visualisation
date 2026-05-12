@@ -7,9 +7,10 @@ import { NodejsFunction } from "aws-cdk-lib/aws-lambda-nodejs";
 import * as lambda from "aws-cdk-lib/aws-lambda";
 import { Construct } from "constructs";
 
+import type { StageId } from "./stage-config";
+
 export interface BusinessDomainHumanQueryStackProps extends cdk.StackProps {
-  /** e.g. dev (dummy account) or prod */
-  stage: string;
+  stage: StageId;
 }
 
 /**
@@ -53,14 +54,14 @@ export class BusinessDomainHumanQueryStack extends cdk.Stack {
       ...lambdaDefaults,
       entry: path.join(__dirname, "..", "lambda", "intent-extract", "index.ts"),
       handler: "handler",
-      description: "NL / structured hint → StructuredQueryIntent JSON (AI layer placeholder)",
+      description: `NL / structured hint → StructuredQueryIntent (${stage})`,
     });
 
     const queryFn = new NodejsFunction(this, "QueryDispatchFn", {
       ...lambdaDefaults,
       entry: path.join(__dirname, "..", "lambda", "query-dispatch", "index.ts"),
       handler: "handler",
-      description: "Validate intent + domain query builders → CW Insights query + X-Ray filter",
+      description: `Validate intent + domain query builders (${stage})`,
     });
 
     const httpApi = new apigwv2.HttpApi(this, "HumanQueryHttpApi", {
@@ -84,7 +85,10 @@ export class BusinessDomainHumanQueryStack extends cdk.Stack {
       integration: new apigwIntegrations.HttpLambdaIntegration("QueryBuildIntegration", queryFn),
     });
 
-    new CfnOutput(this, "HttpApiUrl", { value: httpApi.apiEndpoint, description: "Base URL for POST /intent and POST /query/build" });
+    new CfnOutput(this, "HttpApiUrl", {
+      value: httpApi.apiEndpoint,
+      description: "Base URL for POST /intent and POST /query/build",
+    });
     new CfnOutput(this, "Stage", { value: stage });
   }
 }

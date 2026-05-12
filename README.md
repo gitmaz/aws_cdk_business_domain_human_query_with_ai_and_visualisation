@@ -5,12 +5,13 @@ AWS CDK app that implements the architecture in **[`code_generation_context.md`]
 1. **Natural language** (or passthrough JSON) → **`POST /intent`** → **structured `StructuredQueryIntent`** (no raw CloudWatch Insights from “AI”).
 2. **Structured intent** → **`POST /query/build`** → **domain query builders** → **Logs Insights query string** + **X-Ray filter expression** + metadata for **Grafana** / operators.
 
-**Developer guide (CDK wiring, contracts, extension patterns, curl):** **[README-dev.md](./README-dev.md)**.
+**Developer guide:** **[README-dev.md](./README-dev.md)** · **Testing:** **[README-test.md](./README-test.md)** · **LocalStack:** **[LOCALSTACK.md](./LOCALSTACK.md)**
 
 ## Layout
 
 | Path | Role |
 | ---- | ---- |
+| `lib/stage-config.ts` | Valid stages: `local` \| `dev` \| `test` \| `prod`; CDK `env` for LocalStack vs caller account |
 | `lib/business-domain-human-query-stack.ts` | HTTP API (API Gateway HTTP API v2), Lambdas, X-Ray tracing |
 | `lambda/intent-extract/` | Demo keyword “AI”; production: swap for Bedrock/OpenAI returning only JSON matching `shared/query-intent.ts` |
 | `lambda/query-dispatch/` | Validates `domain` + `intent` against `shared/domain-registry.ts`, calls `domain-builders/*` |
@@ -20,21 +21,42 @@ AWS CDK app that implements the architecture in **[`code_generation_context.md`]
 ## Prerequisites
 
 - Node **20+**
-- AWS credentials for deploy (`CDK_DEFAULT_ACCOUNT` / `CDK_DEFAULT_REGION` or profile)
+- For **`dev` / `test` / `prod`**: AWS credentials and **`CDK_DEFAULT_ACCOUNT`** / **`CDK_DEFAULT_REGION`** (or equivalent profile) for deploy
+- For **`local`**: LocalStack running; see **[LOCALSTACK.md](./LOCALSTACK.md)**
+
+## Stages (aligned with `aws_cdk_invoice_processing_and_approval`)
+
+| Context `-c stage=` | Account / target | Typical deploy |
+| ------------------- | ---------------- | -------------- |
+| **`local`** | **`000000000000`** + LocalStack endpoint | **`npm run deploy:local`** |
+| **`dev`** | Caller default account/region | **`npm run deploy:dev`** |
+| **`test`** | Caller default account/region | **`npm run deploy:test`** |
+| **`prod`** | Caller default account/region | **`npm run deploy:prod`** |
+
+Stack id: **`BusinessDomainHumanQuery-${stage}`** (e.g. `BusinessDomainHumanQuery-local`).
 
 ## Commands
 
 ```bash
 npm install
 npm run build
-npx cdk bootstrap aws://ACCOUNT/REGION   # once per account/region
-npx cdk synth -c stage=dev
-npx cdk deploy --all -c stage=dev      # uses CDK_DEFAULT_ACCOUNT or context; set env for real deploy
+npm test                    # Vitest (no AWS)
+npm run synth:local         # synth only, stage=local
+npm run deploy:local        # LocalStack: bootstrap + deploy (see LOCALSTACK.md)
+npm run destroy:local       # tear down LocalStack stack
 ```
 
-`stage=dev` in **`bin/business-domain-human-query-app.ts`** defaults the stack env to account **`000000000000`** only if you omit `CDK_DEFAULT_ACCOUNT` — override with **`CDK_DEFAULT_ACCOUNT`** / **`CDK_DEFAULT_REGION`** for a real deploy. **`NodejsFunction`** requires the default CDK bootstrap (asset publishing); **`BootstraplessSynthesizer`** is not used here because it cannot publish bundled Lambda assets.
+**AWS accounts** (after `cdk bootstrap aws://ACCOUNT/REGION` once per account/region):
 
-Outputs: **`HttpApiUrl`**.
+```bash
+npx cdk synth -c stage=dev
+npx cdk deploy --all -c stage=dev
+# or: npm run deploy:dev | deploy:test | deploy:prod
+```
+
+**`NodejsFunction`** publishes assets during deploy; do **not** use `BootstraplessSynthesizer` with bundled Lambdas.
+
+Outputs: **`HttpApiUrl`**, **`Stage`**.
 
 ## API
 
@@ -54,7 +76,7 @@ Or passthrough for tests:
     "domain": "warehouse",
     "intent": "inventory_delay_analysis",
     "entityFilters": { "warehouseId": "SYD-1" },
-    "timeRange": { "value": 24, "unit": "hour" },
+    "timeRange": { value: 24, "unit": "hour" },
     "visualization": "timeseries"
   }
 }
