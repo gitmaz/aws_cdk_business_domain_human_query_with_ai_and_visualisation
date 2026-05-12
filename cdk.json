@@ -1,0 +1,28 @@
+{
+  "app": "npx ts-node --prefer-ts-exts bin/business-domain-human-query-app.ts",
+  "watch": {
+    "include": ["**"],
+    "exclude": [
+      "README.md",
+      "code_generation_context.md",
+      "cdk*.json",
+      "**/*.d.ts",
+      "**/*.js",
+      "tsconfig.json",
+      "package*.json",
+      "node_modules",
+      "dist",
+      "cdk.out",
+      "lambda"
+    ]
+  },
+  "context": {
+    "@aws-cdk/aws-lambda:recognizeLayerVersion": true,
+    "humanQuery": {
+      "defaultWarehouseLogGroups": ["/aws/lambda/warehouse-service-demo"],
+      "defaultManufacturingLogGroups": ["/aws/lambda/manufacturing-service-demo"],
+      "defaultFinanceLogGroups": ["/aws/lambda/finance-service-demo"],
+      "defaultOrderingLogGroups": ["/aws/lambda/ordering-service-demo"]
+    }
+  }
+}
