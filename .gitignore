@@ -7,3 +7,5 @@ dist/
 *.d.ts
 .env
 .env.*
+playwright-report/
+test-results/

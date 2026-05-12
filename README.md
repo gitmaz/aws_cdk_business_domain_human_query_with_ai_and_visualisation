@@ -52,6 +52,8 @@ npm run deploy:local        # LocalStack: bootstrap + deploy (see LOCALSTACK.md)
 npm run destroy:local       # tear down LocalStack stack
 ```
 
+Deploy script order: **`npm run build`** → **`cdk bootstrap`** (skippable with **`CDK_SKIP_BOOTSTRAP=1`**) → **`cdk synth`** → **`cdk deploy --app <repo>/cdk.out`** (single bundle pass, then publish to LocalStack). If deploy fails, see **[LOCALSTACK.md § Troubleshooting](./LOCALSTACK.md#3-troubleshooting-deploy--destroy)** (`DEPLOY_LOCAL_VERBOSE`, region, **`AWS_PROFILE`**).
+
 **AWS accounts** (after `cdk bootstrap aws://ACCOUNT/REGION` once per account/region):
 
 ```bash
