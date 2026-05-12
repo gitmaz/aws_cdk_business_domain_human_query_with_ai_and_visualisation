@@ -5,13 +5,14 @@ AWS CDK app that implements the architecture in **[`code_generation_context.md`]
 1. **Natural language** (or passthrough JSON) → **`POST /intent`** → **structured `StructuredQueryIntent`** (no raw CloudWatch Insights from “AI”).
 2. **Structured intent** → **`POST /query/build`** → **domain query builders** → **Logs Insights query string** + **X-Ray filter expression** + metadata for **Grafana** / operators.
 
-**Developer guide:** **[README-dev.md](./README-dev.md)** · **Testing:** **[README-test.md](./README-test.md)** · **LocalStack:** **[LOCALSTACK.md](./LOCALSTACK.md)**
+**Developer guide:** **[README-dev.md](./README-dev.md)** · **Testing:** **[README-test.md](./README-test.md)** · **LocalStack:** **[LOCALSTACK.md](./LOCALSTACK.md)** · **Windows CDK bundling errors:** **[WINDOWS-CDK-BUNDLING.md](./WINDOWS-CDK-BUNDLING.md)**
 
 ## Layout
 
 | Path | Role |
 | ---- | ---- |
 | `lib/stage-config.ts` | Valid stages: `local` \| `dev` \| `test` \| `prod`; CDK `env` for LocalStack vs caller account |
+| `lib/bundling-flags.ts` | Optional Docker bundling for `NodejsFunction` (see WINDOWS-CDK-BUNDLING.md) |
 | `lib/business-domain-human-query-stack.ts` | HTTP API (API Gateway HTTP API v2), Lambdas, X-Ray tracing |
 | `lambda/intent-extract/` | Demo keyword “AI”; production: swap for Bedrock/OpenAI returning only JSON matching `shared/query-intent.ts` |
 | `lambda/query-dispatch/` | Validates `domain` + `intent` against `shared/domain-registry.ts`, calls `domain-builders/*` |
@@ -42,6 +43,11 @@ npm install
 npm run build
 npm test                    # Vitest (no AWS)
 npm run synth:local         # synth only, stage=local
+```
+
+If **`npm run synth:local`** fails on **Windows** with **PowerShell / CLR / esbuild** during **“Bundling asset …”**, start **Docker Desktop** and run **`npm run synth:local:docker`** (or see **[WINDOWS-CDK-BUNDLING.md](./WINDOWS-CDK-BUNDLING.md)**).
+
+```bash
 npm run deploy:local        # LocalStack: bootstrap + deploy (see LOCALSTACK.md)
 npm run destroy:local       # tear down LocalStack stack
 ```

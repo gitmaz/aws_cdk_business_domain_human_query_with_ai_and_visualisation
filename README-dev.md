@@ -47,7 +47,7 @@ POST /query/build (body = structuredIntent)  →  { builtQueries: { logsInsights
 | Path | Role |
 | ---- | ---- |
 | [`bin/business-domain-human-query-app.ts`](./bin/business-domain-human-query-app.ts) | CDK **`App`**, reads **`stage`** from context, constructs stack **`env`** via [`lib/stage-config.ts`](./lib/stage-config.ts) |
-| [`lib/stage-config.ts`](./lib/stage-config.ts) | **`local` \| `dev` \| `test` \| `prod`**; LocalStack dummy account vs **`CDK_DEFAULT_ACCOUNT`** |
+| [`lib/bundling-flags.ts`](./lib/bundling-flags.ts) | Opt-in **`forceDockerBundling`** for **`NodejsFunction`** (Windows PowerShell / CLR workarounds) |
 | [`scripts/deploy-local-localstack.mjs`](./scripts/deploy-local-localstack.mjs) | Bootstrap + **`cdk deploy`** against LocalStack (**`stage=local`**) |
 | [`scripts/destroy-local-localstack.mjs`](./scripts/destroy-local-localstack.mjs) | **`cdk destroy`** on LocalStack (**`stage=local`**) |
 | [`README-test.md`](./README-test.md) | Vitest + Playwright E2E |
@@ -337,6 +337,10 @@ npm run deploy:prod                      # or deploy:dev / deploy:test
 
 **Synth note:** **`NodejsFunction`** triggers esbuild bundling during synth; ensure Docker is available if the CDK bundling pipeline uses it (platform-dependent).
 
+### Windows: “Starting the CLR failed” / PowerShell during bundling
+
+See **[WINDOWS-CDK-BUNDLING.md](./WINDOWS-CDK-BUNDLING.md)**. Quick mitigations: **`npm run synth:local:docker`** with Docker Desktop running, or **`$env:CDK_FORCE_DOCKER_BUNDLING="1"`** before **`cdk synth`** / **`deploy:local`**.
+
 ---
 
 ## HTTP examples (curl)
@@ -393,5 +397,5 @@ curl -sS -X POST "$API/query/build" \
 
 - [README.md](./README.md) — quick start, stages, API overview  
 - [README-test.md](./README-test.md) — unit tests and Playwright E2E  
-- [LOCALSTACK.md](./LOCALSTACK.md) — `stage=local` deploy  
+- [WINDOWS-CDK-BUNDLING.md](./WINDOWS-CDK-BUNDLING.md) — Windows PowerShell / CLR failures during **`NodejsFunction`** bundling  
 - [code_generation_context.md](./code_generation_context.md) — architecture intent and Grafana / X-Ray narrative  

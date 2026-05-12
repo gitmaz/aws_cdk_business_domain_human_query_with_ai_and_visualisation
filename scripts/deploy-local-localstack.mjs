@@ -5,6 +5,10 @@ import { execFileSync } from "node:child_process";
  * Bundled Lambdas (`NodejsFunction`) publish assets to LocalStack S3 — do not use `BootstraplessSynthesizer`.
  *
  * Override when LocalStack is not on the host default: **`AWS_ENDPOINT_URL`** (or **`DEPLOY_LOCAL_DOCKER_ENDPOINT`** in other docs).
+ *
+ * **Windows:** if **`cdk synth`** / deploy fails with PowerShell / CLR / esbuild errors, start Docker Desktop
+ * and set **`CDK_FORCE_DOCKER_BUNDLING=1`** (or run **`npm run synth:local:docker`**) so bundling runs in a container.
+ * See **WINDOWS-CDK-BUNDLING.md** in this repo.
  */
 
 const stage = "local";

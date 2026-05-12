@@ -7,6 +7,7 @@ import { NodejsFunction } from "aws-cdk-lib/aws-lambda-nodejs";
 import * as lambda from "aws-cdk-lib/aws-lambda";
 import { Construct } from "constructs";
 
+import { useDockerLambdaBundling } from "./bundling-flags";
 import type { StageId } from "./stage-config";
 
 export interface BusinessDomainHumanQueryStackProps extends cdk.StackProps {
@@ -37,6 +38,7 @@ export class BusinessDomainHumanQueryStack extends cdk.Stack {
       DEFAULT_ORDERING_LOG_GROUPS: orderingLgs,
     };
 
+    const forceDocker = useDockerLambdaBundling(this);
     const lambdaDefaults = {
       runtime: lambda.Runtime.NODEJS_20_X,
       timeout: Duration.seconds(30),
@@ -47,6 +49,7 @@ export class BusinessDomainHumanQueryStack extends cdk.Stack {
         minify: true,
         sourceMap: true,
         externalModules: ["@aws-sdk/*"],
+        ...(forceDocker ? { forceDockerBundling: true } : {}),
       },
     };
 

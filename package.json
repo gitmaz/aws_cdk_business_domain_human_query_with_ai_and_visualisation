@@ -17,6 +17,7 @@
     "deploy:test": "cdk deploy --all -c stage=test",
     "deploy:prod": "cdk deploy --all -c stage=prod",
     "synth:local": "cdk synth -c stage=local",
+    "synth:local:docker": "cdk synth -c stage=local -c useDockerBundling=true",
     "deploy:local": "node scripts/deploy-local-localstack.mjs",
     "destroy:local": "node scripts/destroy-local-localstack.mjs",
     "test": "vitest run",

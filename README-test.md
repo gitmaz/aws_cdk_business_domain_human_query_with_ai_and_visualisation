@@ -83,7 +83,7 @@ See [`e2e/env.example`](./e2e/env.example). **`PLAYWRIGHT_CFN_STACK`** defaults 
 ## What is *not* automated here
 
 - **Real AWS** full regression across accounts — use your CI with `CDK_DEFAULT_ACCOUNT` / profiles for `dev` / `test` / `prod` deploy smoke tests if needed.
-- **CDK synth** as a test — run `npm run build && npm run synth -c stage=dev` locally when changing infra.
+- **CDK synth** as a test — run `npm run build && npm run synth -c stage=dev` locally when changing infra. On **Windows**, if bundling fails with PowerShell / CLR, use **`npm run synth:local:docker`** (Docker) — see **[WINDOWS-CDK-BUNDLING.md](./WINDOWS-CDK-BUNDLING.md)**.
 
 ---
 

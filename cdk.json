@@ -18,6 +18,7 @@
   },
   "context": {
     "@aws-cdk/aws-lambda:recognizeLayerVersion": true,
+    "useDockerBundling": false,
     "humanQuery": {
       "defaultWarehouseLogGroups": ["/aws/lambda/warehouse-service-demo"],
       "defaultManufacturingLogGroups": ["/aws/lambda/manufacturing-service-demo"],
