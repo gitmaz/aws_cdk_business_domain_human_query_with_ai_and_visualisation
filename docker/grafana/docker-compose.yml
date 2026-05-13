@@ -1,0 +1,74 @@
+name: human-query-grafana
+
+# Local Grafana for `stage=local`. See `code_generation_context_2.md` §"Grafana instance setup".
+#
+# - Grafana is published on http://localhost:3000 (anonymous Admin — local dev only).
+# - CloudWatch + X-Ray datasources are auto-provisioned to point at LocalStack
+#   (`http://host.docker.internal:4566`) using dummy `test`/`test` keys, matching the deploy
+#   scripts. The CloudWatch datasource UID is `cloudwatch` so the same Lambda env wiring works
+#   for both local and AMG.
+# - The LocalStack-deployed Lambda reaches this Grafana via `http://host.docker.internal:3000`
+#   on Docker Desktop (Mac/Windows). On Linux, attach LocalStack and this stack to the same
+#   external network (`human-query-net`) so the Lambda can resolve `http://grafana:3000`.
+#
+# Bring up:
+#   npm run grafana:local:up
+# Tear down:
+#   npm run grafana:local:down
+
+services:
+  grafana:
+    image: grafana/grafana-oss:11.2.2
+    container_name: human-query-grafana
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: admin
+      # Anonymous Admin is **local-only**; never use these settings on AMG / public Grafana.
+      GF_AUTH_ANONYMOUS_ENABLED: "true"
+      GF_AUTH_ANONYMOUS_ORG_ROLE: Admin
+      # Embed-friendly defaults so the `/visualize` URL renders nicely in iframes / Slack.
+      GF_SECURITY_ALLOW_EMBEDDING: "true"
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      # X-Ray datasource plugin is not bundled in the OSS image; install it on first run.
+      GF_INSTALL_PLUGINS: grafana-x-ray-datasource
+    volumes:
+      - grafana-data:/var/lib/grafana
+      - ./grafana.ini:/etc/grafana/grafana.ini:ro
+      - ./provisioning:/etc/grafana/provisioning:ro
+      - ./dashboards:/var/lib/grafana/dashboards:ro
+    # Linux compat: on Docker Desktop (Mac/Win) `host.docker.internal` is auto-mapped. On Linux
+    # we add the host-gateway alias so datasource endpoints can reach LocalStack on the host.
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    networks:
+      - human-query-net
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:3000/api/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+
+  # Optional: enable for server-side `/render/d-solo/...` PNGs. Off by default to keep the local
+  # stack lightweight. Toggle with `COMPOSE_PROFILES=renderer npm run grafana:local:up`.
+  renderer:
+    image: grafana/grafana-image-renderer:3.11.6
+    container_name: human-query-grafana-renderer
+    restart: unless-stopped
+    environment:
+      ENABLE_METRICS: "true"
+    networks:
+      - human-query-net
+    profiles: ["renderer"]
+
+volumes:
+  grafana-data:
+
+networks:
+  # Shared bridge so LocalStack Lambdas (`LAMBDA_DOCKER_NETWORK=human-query-net`) can resolve
+  # `grafana:3000` directly. The network is `external: false` so `docker compose up` creates it.
+  human-query-net:
+    name: human-query-net
+    driver: bridge

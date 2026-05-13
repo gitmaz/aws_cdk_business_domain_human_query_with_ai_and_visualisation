@@ -11,6 +11,7 @@ import { Construct } from "constructs";
 
 import { resolveAiMode } from "../lambda/intent-extract/ai-mode";
 import { useDockerLambdaBundling } from "./bundling-flags";
+import { GrafanaWorkspaceConstruct, type GrafanaContext } from "./grafana-workspace-construct";
 import type { StageId } from "./stage-config";
 
 export interface BusinessDomainHumanQueryStackProps extends cdk.StackProps {
@@ -110,17 +111,21 @@ export class BusinessDomainHumanQueryStack extends cdk.Stack {
     /**
      * Grafana visualization layer (see `code_generation_context_2.md`).
      *
-     * The premise from the brief: **Grafana is hosted by AWS** (typically **Amazon Managed Grafana**)
-     * for every stage including **`local`** — so we never stand up a Grafana workspace from CDK and
-     * we never spin up a LocalStack-only Grafana. The Lambda just points at whatever AMG (or
-     * self-hosted-on-EC2) workspace URL the operator wired into the stack via context / env.
+     * Stage-aware backing (handled by `GrafanaWorkspaceConstruct`):
+     * - **`local`** → local Grafana Docker (`docker/grafana/docker-compose.yml`); the Lambda runs
+     *   inside LocalStack and reaches it via `host.docker.internal:3000` (Docker Desktop) or via
+     *   the shared `human-query-net` bridge when LocalStack is launched with
+     *   `LAMBDA_DOCKER_NETWORK=human-query-net`.
+     * - **`dev|test|prod`** → optionally create **Amazon Managed Grafana** via `CfnWorkspace`
+     *   (`humanQuery.grafana.aws.createWorkspace: true`), or point at an existing AMG via env /
+     *   context `humanQuery.grafana.url`.
      *
-     * Default `mode: "variable"` keeps Grafana dashboards static and feeds dynamic CloudWatch
-     * Insights queries via `?var-dynamicQuery=...` — no dashboard JSON mutation, faster rendering.
+     * Default request `mode: "variable"` keeps Grafana dashboards static and feeds dynamic
+     * CloudWatch Insights queries via `?var-dynamicQuery=...` — no dashboard JSON mutation,
+     * faster rendering.
      */
     const grafanaCtx = (this.node.tryGetContext("humanQuery") as Record<string, unknown> | undefined)?.grafana as
-      | {
-          url?: string;
+      | (GrafanaContext & {
           defaultDashboardUid?: string;
           defaultVariableName?: string;
           defaultPanelId?: number | string;
@@ -128,13 +133,33 @@ export class BusinessDomainHumanQueryStack extends cdk.Stack {
           rendererEnabled?: boolean | string;
           rendererWidth?: number | string;
           rendererHeight?: number | string;
-          apiKeySecretArn?: string;
           defaultRegion?: string;
-        }
+        })
       | undefined;
 
-    const grafanaUrl =
-      (process.env.GRAFANA_URL?.trim() || grafanaCtx?.url?.trim() || "");
+    /**
+     * Top-level context shortcuts for one-shot CLI overrides (since `-c a:b:c=true` does **not**
+     * nest into the `humanQuery.grafana.*` tree — flat keys only).
+     */
+    const cliCreateWorkspace =
+      this.node.tryGetContext("createGrafanaWorkspace") === true ||
+      this.node.tryGetContext("createGrafanaWorkspace") === "true";
+    const cliGrafanaUrl = (this.node.tryGetContext("grafanaUrl") as string | undefined)?.trim();
+
+    const grafanaCtxMerged = {
+      ...grafanaCtx,
+      ...(cliCreateWorkspace
+        ? { aws: { ...(grafanaCtx?.aws ?? {}), createWorkspace: true } }
+        : {}),
+    } as typeof grafanaCtx;
+
+    const grafanaWorkspace = new GrafanaWorkspaceConstruct(this, "Grafana", {
+      stage,
+      context: grafanaCtxMerged,
+      envUrl: cliGrafanaUrl || process.env.GRAFANA_URL?.trim(),
+    });
+
+    const grafanaUrl = grafanaWorkspace.endpoint;
     const grafanaApiKeyInline = process.env.GRAFANA_API_KEY?.trim() ?? "";
     const grafanaApiKeySecretArn =
       (process.env.GRAFANA_API_KEY_SECRET_ARN?.trim() || grafanaCtx?.apiKeySecretArn?.trim() || "");
@@ -161,13 +186,22 @@ export class BusinessDomainHumanQueryStack extends cdk.Stack {
     /**
      * `GRAFANA_MODE` precedence: explicit env / context override → otherwise auto-pick.
      *
-     * Auto: if `GRAFANA_URL` is missing we default to **`MOCK`** so `stage=local` (and unconfigured
-     * accounts) keep returning useful JSON without trying to hit a non-existent workspace. With a
-     * `GRAFANA_URL` wired in we default to **`AWS`** — matches the "AWS-hosted Grafana always" brief.
+     * Auto: when `GRAFANA_URL` resolves to non-empty (either operator-provided, local Docker
+     * default for `stage=local`, or a created AMG workspace endpoint) → `AWS` (real HTTP). When
+     * empty (no operator config + non-local stage + workspace creation disabled) → `MOCK`.
      */
     const grafanaModeContext = (this.node.tryGetContext("grafanaMode") as string | undefined)?.trim();
     const grafanaMode =
       (process.env.GRAFANA_MODE?.trim() || grafanaModeContext || (grafanaUrl ? "AWS" : "MOCK")).toUpperCase();
+
+    /**
+     * Anonymous Grafana is normal for `stage=local` (the Docker stack runs with
+     * `GF_AUTH_ANONYMOUS_ENABLED=true`); flag it explicitly so the Lambda doesn't 503 when no
+     * token is set. Non-local stages keep the AMG default of requiring a Bearer token.
+     */
+    const grafanaAllowAnonymous =
+      process.env.GRAFANA_ALLOW_ANONYMOUS?.trim() ||
+      (stage === "local" && !grafanaApiKeyInline && !grafanaApiKeySecretArn ? "1" : "");
 
     const visualizeEnv = {
       ...commonEnv,
@@ -175,6 +209,7 @@ export class BusinessDomainHumanQueryStack extends cdk.Stack {
       GRAFANA_URL: grafanaUrl,
       GRAFANA_API_KEY: grafanaApiKeyInline,
       GRAFANA_API_KEY_SECRET_ARN: grafanaApiKeySecretArn,
+      GRAFANA_ALLOW_ANONYMOUS: grafanaAllowAnonymous,
       GRAFANA_DEFAULT_DASHBOARD_UID: grafanaDefaultDashboardUid,
       GRAFANA_DEFAULT_VARIABLE_NAME: grafanaDefaultVariableName,
       GRAFANA_DEFAULT_PANEL_ID: grafanaDefaultPanelId,
@@ -243,5 +278,17 @@ export class BusinessDomainHumanQueryStack extends cdk.Stack {
       value: grafanaMode,
       description: "Effective GRAFANA_MODE (AWS = call real Grafana; MOCK = URL builder only)",
     });
+    new CfnOutput(this, "GrafanaBacking", {
+      value: grafanaWorkspace.backing,
+      description:
+        "Where the Lambda's Grafana URL points: local-docker (stage=local), amg-created " +
+        "(CfnWorkspace), amg-existing (operator URL), or none (MOCK).",
+    });
+    if (grafanaUrl) {
+      new CfnOutput(this, "GrafanaUrl", {
+        value: grafanaUrl,
+        description: "Effective Grafana endpoint baked into the visualize Lambda's GRAFANA_URL env",
+      });
+    }
   }
 }

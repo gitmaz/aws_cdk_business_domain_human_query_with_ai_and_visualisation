@@ -8,9 +8,16 @@
  * 2. `render: true` — fetch a PNG (or CSV/XLSX) from `/render/d-solo/...`.
  *
  * Uses the global `fetch` shipped with Node 20 (no extra runtime deps).
+ *
+ * **Auth modes:**
+ * - **Bearer token** (default, AMG): set `apiKey` to a Grafana service-account token.
+ * - **Anonymous** (local Docker dev): pass empty `apiKey`; the client omits the `Authorization`
+ *   header. The target Grafana must allow anonymous access (`GF_AUTH_ANONYMOUS_ENABLED=true` +
+ *   `GF_AUTH_ANONYMOUS_ORG_ROLE=Admin`) — only safe for local development.
  */
 export interface GrafanaApiClientOptions {
   url: string;
+  /** Bearer service-account token. Empty string → unauthenticated (anonymous Grafana). */
   apiKey: string;
   /** Timeout for individual API calls. */
   timeoutMs?: number;
@@ -66,19 +73,21 @@ export class GrafanaApiClient {
 
   constructor(opts: GrafanaApiClientOptions) {
     if (!opts.url?.trim()) throw new Error("GrafanaApiClient: url is required");
-    if (!opts.apiKey?.trim()) throw new Error("GrafanaApiClient: apiKey is required");
     this.base = ensureTrailingSlashStripped(opts.url);
-    this.apiKey = opts.apiKey;
+    this.apiKey = opts.apiKey?.trim() ?? "";
     this.timeoutMs = opts.timeoutMs ?? 8000;
     this.fetchImpl = opts.fetchImpl ?? fetch;
   }
 
+  /** True when configured with a Bearer service-account token. */
+  get isAuthenticated(): boolean {
+    return this.apiKey.length > 0;
+  }
+
   private authHeaders(extra?: Record<string, string>): Record<string, string> {
-    return {
-      Authorization: `Bearer ${this.apiKey}`,
-      Accept: "application/json",
-      ...(extra ?? {}),
-    };
+    const base: Record<string, string> = { Accept: "application/json", ...(extra ?? {}) };
+    if (this.apiKey) base.Authorization = `Bearer ${this.apiKey}`;
+    return base;
   }
 
   async getDashboard(uid: string): Promise<{ dashboard: GrafanaDashboard; version: number }> {

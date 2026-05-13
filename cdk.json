@@ -26,14 +26,27 @@
       "defaultOrderingLogGroups": ["/aws/lambda/ordering-service-demo"],
       "grafana": {
         "url": "",
-        "defaultDashboardUid": "",
+        "defaultDashboardUid": "ai-query-playground",
         "defaultVariableName": "dynamicQuery",
         "defaultDatasourceUid": "cloudwatch",
         "defaultPanelId": 1,
         "rendererEnabled": false,
         "rendererWidth": 1200,
         "rendererHeight": 500,
-        "apiKeySecretArn": ""
+        "apiKeySecretArn": "",
+        "local": {
+          "url": "http://host.docker.internal:3000",
+          "dockerNetworkAlias": "grafana"
+        },
+        "aws": {
+          "createWorkspace": false,
+          "workspaceName": "",
+          "description": "",
+          "authenticationProviders": ["AWS_SSO"],
+          "permissionType": "SERVICE_MANAGED",
+          "dataSources": ["CLOUDWATCH", "XRAY"],
+          "notificationDestinations": ["SNS"]
+        }
       }
     }
   }

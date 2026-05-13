@@ -24,6 +24,13 @@ export interface GrafanaConfig {
   url: string;
   apiKey: string;
   apiKeySecretArn: string;
+  /**
+   * When **`true`**, the Lambda is allowed to call Grafana **without** any Bearer token. Set this
+   * for the **local Docker Grafana** where `GF_AUTH_ANONYMOUS_ENABLED=true` is configured (no
+   * service-account token exists / required). Defaults to **`true` for `stage=local`** when no key
+   * is provided; **`false`** for AWS-hosted (AMG) workspaces.
+   */
+  allowAnonymous: boolean;
   defaultDashboardUid: string;
   defaultVariableName: string;
   defaultPanelId: number | undefined;
@@ -67,18 +74,32 @@ export function readGrafanaConfig(env: NodeJS.ProcessEnv = process.env): Grafana
   const url = env.GRAFANA_URL?.trim() ?? "";
   const apiKey = env.GRAFANA_API_KEY?.trim() ?? "";
   const apiKeySecretArn = env.GRAFANA_API_KEY_SECRET_ARN?.trim() ?? "";
+  const stage = env.STAGE?.trim() ?? "";
 
   /**
    * Auto-fallback to MOCK when AWS mode was requested but no URL is configured.
-   * Keeps `stage=local` synth / E2E useful before the operator wires a real AMG workspace.
+   * Keeps `stage=local` synth / E2E useful before the operator wires a real Grafana endpoint.
    */
   const effectiveMode: GrafanaMode = explicitMode === "AWS" && !url ? "MOCK" : explicitMode;
+
+  /**
+   * Anonymous-auth opt-in:
+   * - **`GRAFANA_ALLOW_ANONYMOUS=1`** explicit override (any stage).
+   * - **`stage=local`** with no token configured (typical local Docker Grafana running with
+   *   `GF_AUTH_ANONYMOUS_ENABLED=true`).
+   *
+   * AMG (any non-local stage) requires a service-account token; we never imply anonymous there.
+   */
+  const explicitAnonymous = envTruthy(env.GRAFANA_ALLOW_ANONYMOUS);
+  const localAnonymous = stage === "local" && !apiKey && !apiKeySecretArn;
+  const allowAnonymous = explicitAnonymous || localAnonymous;
 
   return {
     mode: effectiveMode,
     url,
     apiKey,
     apiKeySecretArn,
+    allowAnonymous,
     defaultDashboardUid: env.GRAFANA_DEFAULT_DASHBOARD_UID?.trim() ?? "",
     defaultVariableName: env.GRAFANA_DEFAULT_VARIABLE_NAME?.trim() || "dynamicQuery",
     defaultPanelId: parseOptionalIntegerEnv(env.GRAFANA_DEFAULT_PANEL_ID),

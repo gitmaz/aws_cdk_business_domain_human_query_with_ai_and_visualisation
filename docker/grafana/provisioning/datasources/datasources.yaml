@@ -1,0 +1,40 @@
+# Auto-provisioned datasources for local Grafana → LocalStack.
+#
+# Both datasources hit LocalStack's CloudWatch / X-Ray emulation via the host gateway so that the
+# same generated CloudWatch Logs Insights query produced by `/query/build` and `/visualize` runs
+# untouched against either AMG (real CloudWatch) or this local stack.
+#
+# UIDs match the AMG-side default (`cloudwatch`, `xray`) so the Lambda's
+# `GRAFANA_DEFAULT_DATASOURCE_UID=cloudwatch` env wiring works in both worlds.
+
+apiVersion: 1
+
+datasources:
+  - name: CloudWatch (LocalStack)
+    uid: cloudwatch
+    type: cloudwatch
+    access: proxy
+    isDefault: true
+    editable: true
+    jsonData:
+      authType: keys
+      defaultRegion: us-east-1
+      # LocalStack edge endpoint reachable from inside the Grafana container.
+      endpoint: http://host.docker.internal:4566
+      customMetricsNamespaces: ""
+    secureJsonData:
+      accessKey: test
+      secretKey: test
+
+  - name: X-Ray (LocalStack)
+    uid: xray
+    type: grafana-x-ray-datasource
+    access: proxy
+    editable: true
+    jsonData:
+      authType: keys
+      defaultRegion: us-east-1
+      endpoint: http://host.docker.internal:4566
+    secureJsonData:
+      accessKey: test
+      secretKey: test

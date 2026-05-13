@@ -94,7 +94,76 @@ From **another container** on Docker Desktop (Windows/macOS), point **`AWS_ENDPO
 
 ---
 
-## 5) Playwright E2E against LocalStack
+## 5) Local Grafana Docker (visualization layer)
+
+`POST /visualize` (see **[README.md § "Grafana — stage-aware backing"](./README.md#grafana--stage-aware-backing)**) is wired by the CDK stack to a **local Grafana Docker** when `stage=local`. It is **not** a LocalStack-emulated Grafana — it is a real Grafana OSS container with **CloudWatch + X-Ray datasources provisioned against LocalStack** (`http://host.docker.internal:4566`, dummy `test`/`test` keys).
+
+Bring it up beside LocalStack:
+
+```bash
+npm run grafana:local:up                 # http://localhost:3000 (anonymous Admin)
+npm run grafana:local:up:renderer        # + Grafana Image Renderer for `render: true`
+npm run grafana:local:down               # stop
+npm run grafana:local:down:purge         # stop + drop the persisted Grafana volume
+```
+
+Provisioned automatically (see `docker/grafana/`):
+
+- **CloudWatch (LocalStack)** datasource — UID **`cloudwatch`** — endpoint `http://host.docker.internal:4566`, region `us-east-1`.
+- **X-Ray (LocalStack)** datasource — UID **`xray`** — same endpoint (X-Ray plugin auto-installed via `GF_INSTALL_PLUGINS=grafana-x-ray-datasource`).
+- Dashboard **`ai-query-playground`** with a **`dynamicQuery`** Textbox template variable; panels' CloudWatch Logs Insights expression is **`${dynamicQuery}`** so the variable-driven URL from `/visualize` Just Works.
+
+### Networking — Lambda ↔ Grafana
+
+The CDK stack defaults `GRAFANA_URL=http://host.docker.internal:3000` for `stage=local`. Reachability of that URL from the **LocalStack Lambda container** varies by platform:
+
+| Platform | Default Just Works? | If not, options |
+| -------- | ------------------- | --------------- |
+| **Docker Desktop** (Mac / Windows) | **Yes** — `host.docker.internal` is auto-mapped inside LocalStack Lambda containers. | — |
+| **Linux** | **No** — host gateway alias is not added by default. | (1) **Shared bridge:** start LocalStack with **`LAMBDA_DOCKER_NETWORK=human-query-net`** (the network is created by `docker compose up`) and set **`GRAFANA_URL=http://grafana:3000`**.<br/>(2) **Host gateway flag:** start LocalStack with **`LAMBDA_DOCKER_FLAGS="--add-host host.docker.internal:host-gateway"`** and keep the default URL. |
+
+Quick verification after `npm run grafana:local:up`:
+
+```bash
+# from host:
+curl http://localhost:3000/api/health
+# inside any container on human-query-net:
+docker run --rm --network human-query-net curlimages/curl -s http://grafana:3000/api/health
+```
+
+### Authentication on local Docker Grafana
+
+The bundled `grafana.ini` enables **anonymous Admin** (`GF_AUTH_ANONYMOUS_ENABLED=true` + `GF_AUTH_ANONYMOUS_ORG_ROLE=Admin`). This is **local development only** — never replicate on AMG. The CDK stack auto-sets **`GRAFANA_ALLOW_ANONYMOUS=1`** on the visualize Lambda for `stage=local` when no `GRAFANA_API_KEY` is configured, so `panel_patch` and `render: true` requests do not require a service-account token.
+
+### Stack outputs after `npm run deploy:local`
+
+| Output | Local default value |
+| ------ | ------------------- |
+| **`GrafanaMode`** | **`AWS`** (real HTTP) when Grafana Docker is reachable; **`MOCK`** if `GRAFANA_URL` is empty |
+| **`GrafanaBacking`** | **`local-docker`** |
+| **`GrafanaUrl`** | **`http://host.docker.internal:3000`** (or operator override) |
+| **`HttpApiUrl`** | LocalStack HTTP API base — `POST /visualize` lives here |
+
+### Sanity check end-to-end (variable-driven)
+
+```bash
+npm run grafana:local:up
+npm run deploy:local
+
+# Replace <HttpApiUrl> with the LocalStack HTTP API base from the stack output:
+curl -X POST <HttpApiUrl>/visualize \
+  -H 'content-type: application/json' \
+  -d '{
+    "query": "fields @timestamp, @message | sort @timestamp desc | limit 20",
+    "dashboardUid": "ai-query-playground"
+  }'
+```
+
+The response includes `grafana.dashboardUrl` — open it in a browser to see the dashboard rendered against the LocalStack-backed CloudWatch datasource.
+
+---
+
+## 6) Playwright E2E against LocalStack
 
 After deploy:
 

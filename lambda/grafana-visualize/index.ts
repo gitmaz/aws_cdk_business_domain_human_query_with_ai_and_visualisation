@@ -39,18 +39,29 @@ import {
  * - **`mode: "panel_patch"`** — legacy: GET → mutate → POST the dashboard JSON (slow, version
  *   churn, audit noise — kept for back-compat only).
  *
- * ## Does this Lambda ever call Grafana on `stage=local`?
+ * ## Where the Lambda posts per stage (`code_generation_context_2.md` §"Grafana instance setup")
  *
- * There is **no** LocalStack-hosted Grafana — the brief assumes Grafana is AWS-hosted (AMG) for
- * every stage. Whether the LocalStack-deployed Lambda touches the real workspace depends on:
+ * The CDK stack picks `GRAFANA_URL` stage-aware via **`lib/grafana-workspace-construct.ts`**:
+ *
+ * - **`stage=local`** → **local Grafana Docker** (`docker/grafana/docker-compose.yml`) reached at
+ *   `http://host.docker.internal:3000` (Docker Desktop) or `http://grafana:3000` (shared
+ *   `human-query-net` bridge on Linux). Anonymous Admin — no API key required because the stack
+ *   auto-sets `GRAFANA_ALLOW_ANONYMOUS=1` for `stage=local`.
+ * - **`stage=dev|test|prod`** → **Amazon Managed Grafana** (`grafana.CfnWorkspace`) — either
+ *   created by CDK when `humanQuery.grafana.aws.createWorkspace=true` (or
+ *   `-c createGrafanaWorkspace=true`) or an existing workspace URL via `GRAFANA_URL` / context.
+ *   Requires a Grafana service-account token (env `GRAFANA_API_KEY` or Secrets Manager via
+ *   `GRAFANA_API_KEY_SECRET_ARN`).
+ *
+ * **Does the Lambda actually POST?** Only when the request asks for it:
  *
  * 1. `GRAFANA_MODE` — auto-degrades to `MOCK` when `GRAFANA_URL` is empty (see `grafana-config.ts`).
  *    In `MOCK` mode this handler short-circuits and returns the URL it *would* have built; no fetch.
- * 2. Request `mode` — `variable` (default) is pure URL construction with no HTTP call from the
- *    Lambda even in `AWS` mode (Grafana is hit by the user's *browser* when the URL is opened).
+ * 2. Request `mode` — `variable` (default) is **pure URL construction** with no HTTP call from
+ *    the Lambda even in `AWS` mode; Grafana is hit by the user's *browser* when the URL is opened.
  *    `panel_patch` is the legacy path that does call `GET/POST /api/dashboards/...`.
  * 3. `render: true` — fetches `GET /render/d-solo/...` server-side; the only default-shape path
- *    that actually punches HTTP out of the LocalStack container to the AMG workspace.
+ *    that actually punches HTTP out of the Lambda container to whichever Grafana is wired in.
  *
  * Full matrix is in **`README.md` § "Does `stage=local` really POST to Grafana, or simulate?"**.
  */
@@ -265,11 +276,15 @@ export const handler = async (event: APIGatewayProxyEventV2): Promise<APIGateway
     });
   }
 
-  /** AWS mode — real HTTP. Need an API key for `panel_patch` and `render`; URL-only mode does not. */
-  const needsApiKey = mode === "panel_patch" || req.render === true;
+  /**
+   * AWS mode — real HTTP. `panel_patch` and `render: true` actually call Grafana; the default
+   * `variable` mode is pure URL construction (no HTTP). Auth: bearer token by default, but local
+   * Docker Grafana with `GF_AUTH_ANONYMOUS_ENABLED=true` is allowed when `cfg.allowAnonymous`.
+   */
+  const needsHttp = mode === "panel_patch" || req.render === true;
   let client: GrafanaApiClient | undefined;
-  if (needsApiKey) {
-    let apiKey: string;
+  if (needsHttp) {
+    let apiKey = "";
     try {
       apiKey = await resolveGrafanaApiKey(cfg);
     } catch (e) {
@@ -278,10 +293,12 @@ export const handler = async (event: APIGatewayProxyEventV2): Promise<APIGateway
         hint: "Set GRAFANA_API_KEY or GRAFANA_API_KEY_SECRET_ARN on the Lambda environment.",
       });
     }
-    if (!apiKey.trim()) {
+    if (!apiKey.trim() && !cfg.allowAnonymous) {
       return json(503, {
-        error: "Grafana API key is empty",
-        hint: "Set GRAFANA_API_KEY or GRAFANA_API_KEY_SECRET_ARN; required for panel_patch and render modes.",
+        error: "Grafana API key is empty and anonymous mode is not allowed",
+        hint:
+          "Set GRAFANA_API_KEY / GRAFANA_API_KEY_SECRET_ARN, or set GRAFANA_ALLOW_ANONYMOUS=1 " +
+          "when targeting a local anonymous Grafana (e.g. the bundled docker-compose stack).",
       });
     }
     client = new GrafanaApiClient({ url: cfg.url, apiKey });

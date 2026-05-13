@@ -38,7 +38,7 @@ describe("grafana-visualize handler (MOCK mode)", () => {
   beforeEach(() => {
     // Reset GRAFANA_* env between tests to avoid cross-pollination.
     for (const k of Object.keys(process.env)) {
-      if (k.startsWith("GRAFANA_") || k.startsWith("DEFAULT_")) delete process.env[k];
+      if (k.startsWith("GRAFANA_") || k.startsWith("DEFAULT_") || k === "STAGE") delete process.env[k];
     }
     Object.assign(process.env, demoEnv);
   });
@@ -155,5 +155,28 @@ describe("grafana-visualize handler (MOCK mode)", () => {
     expect(body.grafana.renderUrl).toContain("panelId=3");
     expect(body.grafana.renderUrl).toContain("width=800");
     expect(body.grafana.renderBytesBase64).toBeUndefined();
+  });
+
+  it("auto-allows anonymous on STAGE=local when no API key is configured", async () => {
+    /**
+     * The CDK stack wires `GRAFANA_ALLOW_ANONYMOUS=1` for `stage=local` when no token is set,
+     * but the config helper also auto-detects this from `STAGE=local` + missing key. This test
+     * exercises the latter path to ensure `panel_patch` would not 503 in local Docker mode.
+     */
+    process.env.GRAFANA_URL = "http://host.docker.internal:3000";
+    process.env.GRAFANA_MODE = "MOCK"; // keep handler short-circuited so we don't actually fetch
+    process.env.STAGE = "local";
+    const res = await handler(
+      mkEvent({
+        query: "fields @timestamp",
+        panelId: 4,
+        mode: "panel_patch",
+      }),
+    );
+    /** MOCK short-circuit returns 200; absence of 503 = anonymous gate passed. */
+    expect(res.statusCode).toBe(200);
+    const body = JSON.parse(String(res.body));
+    expect(body.grafana.mode).toBe("panel_patch");
+    expect(body.grafana.grafanaMode).toBe("MOCK");
   });
 });
