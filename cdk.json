@@ -23,7 +23,18 @@
       "defaultWarehouseLogGroups": ["/aws/lambda/warehouse-service-demo"],
       "defaultManufacturingLogGroups": ["/aws/lambda/manufacturing-service-demo"],
       "defaultFinanceLogGroups": ["/aws/lambda/finance-service-demo"],
-      "defaultOrderingLogGroups": ["/aws/lambda/ordering-service-demo"]
+      "defaultOrderingLogGroups": ["/aws/lambda/ordering-service-demo"],
+      "grafana": {
+        "url": "",
+        "defaultDashboardUid": "",
+        "defaultVariableName": "dynamicQuery",
+        "defaultDatasourceUid": "cloudwatch",
+        "defaultPanelId": 1,
+        "rendererEnabled": false,
+        "rendererWidth": 1200,
+        "rendererHeight": 500,
+        "apiKeySecretArn": ""
+      }
     }
   }
 }

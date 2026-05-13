@@ -6,6 +6,7 @@ import * as apigwIntegrations from "aws-cdk-lib/aws-apigatewayv2-integrations";
 import * as iam from "aws-cdk-lib/aws-iam";
 import { NodejsFunction } from "aws-cdk-lib/aws-lambda-nodejs";
 import * as lambda from "aws-cdk-lib/aws-lambda";
+import * as secretsmanager from "aws-cdk-lib/aws-secretsmanager";
 import { Construct } from "constructs";
 
 import { resolveAiMode } from "../lambda/intent-extract/ai-mode";
@@ -106,6 +107,106 @@ export class BusinessDomainHumanQueryStack extends cdk.Stack {
       description: `Validate intent + domain query builders (${stage})`,
     });
 
+    /**
+     * Grafana visualization layer (see `code_generation_context_2.md`).
+     *
+     * The premise from the brief: **Grafana is hosted by AWS** (typically **Amazon Managed Grafana**)
+     * for every stage including **`local`** — so we never stand up a Grafana workspace from CDK and
+     * we never spin up a LocalStack-only Grafana. The Lambda just points at whatever AMG (or
+     * self-hosted-on-EC2) workspace URL the operator wired into the stack via context / env.
+     *
+     * Default `mode: "variable"` keeps Grafana dashboards static and feeds dynamic CloudWatch
+     * Insights queries via `?var-dynamicQuery=...` — no dashboard JSON mutation, faster rendering.
+     */
+    const grafanaCtx = (this.node.tryGetContext("humanQuery") as Record<string, unknown> | undefined)?.grafana as
+      | {
+          url?: string;
+          defaultDashboardUid?: string;
+          defaultVariableName?: string;
+          defaultPanelId?: number | string;
+          defaultDatasourceUid?: string;
+          rendererEnabled?: boolean | string;
+          rendererWidth?: number | string;
+          rendererHeight?: number | string;
+          apiKeySecretArn?: string;
+          defaultRegion?: string;
+        }
+      | undefined;
+
+    const grafanaUrl =
+      (process.env.GRAFANA_URL?.trim() || grafanaCtx?.url?.trim() || "");
+    const grafanaApiKeyInline = process.env.GRAFANA_API_KEY?.trim() ?? "";
+    const grafanaApiKeySecretArn =
+      (process.env.GRAFANA_API_KEY_SECRET_ARN?.trim() || grafanaCtx?.apiKeySecretArn?.trim() || "");
+    const grafanaDefaultDashboardUid =
+      (process.env.GRAFANA_DEFAULT_DASHBOARD_UID?.trim() || grafanaCtx?.defaultDashboardUid?.trim() || "");
+    const grafanaDefaultVariableName =
+      (process.env.GRAFANA_DEFAULT_VARIABLE_NAME?.trim() || grafanaCtx?.defaultVariableName?.trim() || "dynamicQuery");
+    const grafanaDefaultPanelId =
+      (process.env.GRAFANA_DEFAULT_PANEL_ID?.trim() || (grafanaCtx?.defaultPanelId !== undefined ? String(grafanaCtx.defaultPanelId) : ""));
+    const grafanaDefaultDatasourceUid =
+      (process.env.GRAFANA_DEFAULT_DATASOURCE_UID?.trim() || grafanaCtx?.defaultDatasourceUid?.trim() || "cloudwatch");
+    const grafanaDefaultRegion =
+      (process.env.GRAFANA_DEFAULT_REGION?.trim() || grafanaCtx?.defaultRegion?.trim() || this.region);
+    const grafanaRendererEnabled =
+      (process.env.GRAFANA_RENDERER_ENABLED?.trim() ||
+        (grafanaCtx?.rendererEnabled !== undefined ? String(grafanaCtx.rendererEnabled) : ""));
+    const grafanaRendererWidth =
+      (process.env.GRAFANA_RENDERER_WIDTH?.trim() ||
+        (grafanaCtx?.rendererWidth !== undefined ? String(grafanaCtx.rendererWidth) : ""));
+    const grafanaRendererHeight =
+      (process.env.GRAFANA_RENDERER_HEIGHT?.trim() ||
+        (grafanaCtx?.rendererHeight !== undefined ? String(grafanaCtx.rendererHeight) : ""));
+
+    /**
+     * `GRAFANA_MODE` precedence: explicit env / context override → otherwise auto-pick.
+     *
+     * Auto: if `GRAFANA_URL` is missing we default to **`MOCK`** so `stage=local` (and unconfigured
+     * accounts) keep returning useful JSON without trying to hit a non-existent workspace. With a
+     * `GRAFANA_URL` wired in we default to **`AWS`** — matches the "AWS-hosted Grafana always" brief.
+     */
+    const grafanaModeContext = (this.node.tryGetContext("grafanaMode") as string | undefined)?.trim();
+    const grafanaMode =
+      (process.env.GRAFANA_MODE?.trim() || grafanaModeContext || (grafanaUrl ? "AWS" : "MOCK")).toUpperCase();
+
+    const visualizeEnv = {
+      ...commonEnv,
+      GRAFANA_MODE: grafanaMode,
+      GRAFANA_URL: grafanaUrl,
+      GRAFANA_API_KEY: grafanaApiKeyInline,
+      GRAFANA_API_KEY_SECRET_ARN: grafanaApiKeySecretArn,
+      GRAFANA_DEFAULT_DASHBOARD_UID: grafanaDefaultDashboardUid,
+      GRAFANA_DEFAULT_VARIABLE_NAME: grafanaDefaultVariableName,
+      GRAFANA_DEFAULT_PANEL_ID: grafanaDefaultPanelId,
+      GRAFANA_DEFAULT_DATASOURCE_UID: grafanaDefaultDatasourceUid,
+      GRAFANA_DEFAULT_REGION: grafanaDefaultRegion,
+      GRAFANA_RENDERER_ENABLED: grafanaRendererEnabled,
+      GRAFANA_RENDERER_WIDTH: grafanaRendererWidth,
+      GRAFANA_RENDERER_HEIGHT: grafanaRendererHeight,
+    };
+
+    const visualizeFn = new NodejsFunction(this, "GrafanaVisualizeFn", {
+      ...lambdaDefaults,
+      entry: path.join(__dirname, "..", "lambda", "grafana-visualize", "index.ts"),
+      handler: "handler",
+      description: `Build Grafana var-driven URL + optional render for a generated query (${stage})`,
+      environment: visualizeEnv,
+    });
+
+    if (grafanaApiKeySecretArn) {
+      /**
+       * Grant runtime read access to the Grafana service-account token secret. Lambda lazy-imports
+       * `@aws-sdk/client-secrets-manager` only when this ARN is set; the runtime SDK is provided by
+       * the Node 20 managed runtime so no bundling is required.
+       */
+      const secret = secretsmanager.Secret.fromSecretCompleteArn(
+        this,
+        "GrafanaApiKeySecret",
+        grafanaApiKeySecretArn,
+      );
+      secret.grantRead(visualizeFn);
+    }
+
     const httpApi = new apigwv2.HttpApi(this, "HumanQueryHttpApi", {
       apiName: `human-query-intent-${stage}`,
       corsPreflight: {
@@ -127,10 +228,20 @@ export class BusinessDomainHumanQueryStack extends cdk.Stack {
       integration: new apigwIntegrations.HttpLambdaIntegration("QueryBuildIntegration", queryFn),
     });
 
+    httpApi.addRoutes({
+      path: "/visualize",
+      methods: [apigwv2.HttpMethod.POST],
+      integration: new apigwIntegrations.HttpLambdaIntegration("GrafanaVisualizeIntegration", visualizeFn),
+    });
+
     new CfnOutput(this, "HttpApiUrl", {
       value: httpApi.apiEndpoint,
-      description: "Base URL for POST /intent and POST /query/build",
+      description: "Base URL for POST /intent, POST /query/build, and POST /visualize",
     });
     new CfnOutput(this, "Stage", { value: stage });
+    new CfnOutput(this, "GrafanaMode", {
+      value: grafanaMode,
+      description: "Effective GRAFANA_MODE (AWS = call real Grafana; MOCK = URL builder only)",
+    });
   }
 }

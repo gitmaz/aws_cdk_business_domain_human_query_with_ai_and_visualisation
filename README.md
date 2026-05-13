@@ -1,9 +1,10 @@
 # Business domain human query (AI intent → safe observability queries)
 
-AWS CDK app that implements the architecture in **[`code_generation_context.md`](./code_generation_context.md)**:
+AWS CDK app that implements the architecture in **[`code_generation_context.md`](./code_generation_context.md)** and the visualization layer in **[`code_generation_context_2.md`](./code_generation_context_2.md)**:
 
 1. **Natural language** (or passthrough JSON) → **`POST /intent`** → **structured `StructuredQueryIntent`** (no raw CloudWatch Insights from “AI”).
 2. **Structured intent** → **`POST /query/build`** → **domain query builders** → **Logs Insights query string** + **X-Ray filter expression** + metadata for **Grafana** / operators.
+3. **Built query** (or `structuredIntent`) → **`POST /visualize`** → **Grafana variable-driven dashboard URL** (`?var-dynamicQuery=...`) + optional Image Renderer PNG. Grafana is assumed to be **AWS-hosted** (Amazon Managed Grafana) for every stage, including **`local`**.
 
 **Developer guide:** **[README-dev.md](./README-dev.md)** · **LocalStack:** **[LOCALSTACK.md](./LOCALSTACK.md)** · **Windows CDK bundling:** **[WINDOWS-CDK-BUNDLING.md](./WINDOWS-CDK-BUNDLING.md)**
 
@@ -118,9 +119,119 @@ Body: full **`StructuredQueryIntent`** (e.g. copy `structuredIntent` from `/inte
 
 Response includes **`builtQueries.logsInsightsQuery`**, **`builtQueries.xrayFilterExpression`**, **`builtQueries.logGroupNames`**.
 
-## Grafana
+### `POST {HttpApiUrl}/visualize`
 
-Point Grafana’s **CloudWatch** / **X-Ray** data sources at the same account/region; paste generated queries into panels or use Grafana’s query editor with the returned expressions as a starting point.
+Takes a built query (or `structuredIntent` to build server-side) and returns a **Grafana variable-driven** dashboard URL — the dashboard's panel target is authored once as **`${dynamicQuery}`**, and `?var-dynamicQuery=<encoded query>` is appended at request time. This avoids the slow `POST /api/dashboards/db` round-trips, version churn, race conditions, and audit noise of mutating dashboard JSON per request (see **[`code_generation_context_2.md`](./code_generation_context_2.md)** — *Alternative cleaner design*).
+
+Body:
+
+```json
+{
+  "query": "fields @timestamp, latency | stats avg(latency) by bin(5m)",
+  "dashboardUid": "ops-dash",
+  "panelId": 4,
+  "timeRange": { "value": 6, "unit": "hour" },
+  "variables": { "region": "ap-southeast-2" }
+}
+```
+
+Or pipe an intent through in one call (server runs the domain builder, then builds the URL):
+
+```json
+{
+  "structuredIntent": {
+    "domain": "warehouse",
+    "intent": "inventory_delay_analysis",
+    "entityFilters": { "warehouseId": "WH-1" },
+    "timeRange": { "value": 24, "unit": "hour" },
+    "visualization": "timeseries"
+  }
+}
+```
+
+Optional fields: **`variableName`** (default `dynamicQuery`), **`from`** / **`to`** (overrides `timeRange`), **`refresh`**, **`slug`**, **`region`**, **`render`** (fetch PNG via Grafana Image Renderer), **`mode`** (`variable` default, or legacy `panel_patch` that mutates dashboard JSON).
+
+Response:
+
+```json
+{
+  "grafana": {
+    "mode": "variable",
+    "grafanaMode": "AWS",
+    "dashboardUid": "ops-dash",
+    "variableName": "dynamicQuery",
+    "panelId": 4,
+    "dashboardUrl": "https://g-xxx.grafana-workspace.<region>.amazonaws.com/d/ops-dash?var-dynamicQuery=...&from=now-6h&to=now&panelId=4",
+    "panelEmbedUrl": "https://.../d-solo/ops-dash?...",
+    "timeRange": { "from": "now-6h", "to": "now" },
+    "refresh": "30s",
+    "datasourceUid": "cloudwatch",
+    "region": "ap-southeast-2"
+  },
+  "query": "fields @timestamp, latency | stats avg(latency) by bin(5m)"
+}
+```
+
+When `render: true` **and** `GRAFANA_RENDERER_ENABLED=1`, the response also includes `grafana.renderUrl`, `grafana.renderType`, and `grafana.renderBytesBase64` (PNG/CSV from `/render/d-solo/...`).
+
+## Grafana — AWS-hosted assumption
+
+The visualize Lambda assumes **Grafana is hosted by AWS** (Amazon Managed Grafana) **for every stage including `local`** — there is no LocalStack Grafana. The Lambda points at whatever workspace URL the operator wires in via context / env; for `stage=local` (LocalStack) it still calls out to the real AMG workspace if one is configured.
+
+| Setting | Source | Default |
+| ------- | ------ | ------- |
+| `GRAFANA_URL` | `process.env.GRAFANA_URL` or `humanQuery.grafana.url` (cdk.json) | *unset → auto-fallback to `GRAFANA_MODE=MOCK`* |
+| `GRAFANA_API_KEY` | env (plain) — service-account token | empty |
+| `GRAFANA_API_KEY_SECRET_ARN` | env or `humanQuery.grafana.apiKeySecretArn` — Secrets Manager ARN (preferred) | empty; when set, `secretsmanager:GetSecretValue` is granted at deploy time |
+| `GRAFANA_DEFAULT_DASHBOARD_UID` | env or context | empty (must be provided per request) |
+| `GRAFANA_DEFAULT_VARIABLE_NAME` | env or context | `dynamicQuery` |
+| `GRAFANA_DEFAULT_PANEL_ID` | env or context | `1` |
+| `GRAFANA_DEFAULT_DATASOURCE_UID` | env or context | `cloudwatch` |
+| `GRAFANA_DEFAULT_REGION` | env or context | stack region |
+| `GRAFANA_RENDERER_ENABLED` | env or context | `false` (requires Grafana Image Renderer plugin on the workspace) |
+| `GRAFANA_MODE` | env or `-c grafanaMode=` | `AWS` when `GRAFANA_URL` is set, else `MOCK` |
+
+**Service-account token:** create a [Grafana service account](https://grafana.com/docs/grafana/latest/administration/service-accounts/) with **Editor** role (only `Viewer` is needed for variable-URL mode; **Editor** is needed for the legacy `panel_patch` mode and for the Image Renderer endpoint depending on workspace config). Store the token in **AWS Secrets Manager** and pass the ARN via **`GRAFANA_API_KEY_SECRET_ARN`** (CDK grants the Lambda `secretsmanager:GetSecretValue` automatically).
+
+**Dashboard authoring:** create a Grafana **template variable** named `dynamicQuery` (Type: *Textbox*, no query); the target panel's CloudWatch Logs Insights expression is `${dynamicQuery}`. The dashboard JSON is then static — only `?var-dynamicQuery=...` changes per request, which is what makes this path fast.
+
+### Does `stage=local` really POST to Grafana, or simulate?
+
+Both, depending on three independent toggles. The Lambda **does not** spin up a LocalStack Grafana — that's the explicit "AWS-hosted always" assumption from **[`code_generation_context_2.md`](./code_generation_context_2.md)**. Whether the LocalStack-hosted Lambda actually hits a Grafana workspace over the network is decided at runtime by:
+
+1. **`GRAFANA_MODE`** (`AWS` vs `MOCK`) — at deploy time CDK picks `AWS` when `GRAFANA_URL` is set, else `MOCK`. **`grafana-config.ts`** also auto-degrades `AWS → MOCK` at runtime when `GRAFANA_URL` is empty (so a half-configured Lambda still returns useful JSON instead of crashing).
+2. **Request `mode`** — `variable` (default) vs `panel_patch`. The variable path is **pure URL construction** — no HTTP call from the Lambda, even in `AWS` mode. Grafana is hit by the **user's browser** when they open the returned URL.
+3. **Request `render`** — when `true` **and** `GRAFANA_RENDERER_ENABLED=1`, the Lambda fetches a PNG/CSV from `/render/d-solo/...` server-side, which is the only path that requires the API key for a default-shaped request.
+
+Resulting matrix for `stage=local`:
+
+| `GRAFANA_URL` configured? | Request shape | Effective mode | Calls Grafana from the Lambda? |
+| ------------------------- | ------------- | -------------- | ------------------------------ |
+| **No** (default `cdk.json`) | *anything* | `MOCK` | **No** — returns the URL it *would* have built + `mockNote: "GRAFANA_MODE=MOCK …"` |
+| **Yes** | `{ query, dashboardUid }` (default `mode: "variable"`) | `AWS` | **No** — pure string build of `?var-dynamicQuery=…`; browser hits Grafana when the URL is opened |
+| **Yes** | `{ ..., render: true }` + `GRAFANA_RENDERER_ENABLED=1` | `AWS` | **Yes** — `GET /render/d-solo/...` from the LocalStack Lambda container |
+| **Yes** | `{ ..., mode: "panel_patch", panelId }` | `AWS` | **Yes** — `GET /api/dashboards/uid/<uid>` then `POST /api/dashboards/db` (legacy path) |
+
+LocalStack Lambdas run in Docker containers with default internet egress, so when the Lambda *does* call Grafana from `stage=local` it goes straight out to the public AMG workspace URL — there is no LocalStack proxy in front of Grafana.
+
+**Forcing `stage=local` to hit a real AMG workspace:**
+
+```powershell
+$env:GRAFANA_URL = "https://g-xxxxx.grafana-workspace.ap-southeast-2.amazonaws.com"
+$env:GRAFANA_API_KEY = "<service-account-token>"   # or set GRAFANA_API_KEY_SECRET_ARN
+$env:GRAFANA_DEFAULT_DASHBOARD_UID = "ops-dash"
+npm run deploy:local
+```
+
+**Forcing the simulated path even when `GRAFANA_URL` is set** (handy for offline tests):
+
+```powershell
+$env:GRAFANA_MODE = "MOCK"; npm run deploy:local
+# or one-shot CDK context:
+npx cdk deploy --all -c stage=local -c grafanaMode=MOCK
+```
+
+The stack output **`GrafanaMode`** echoes the effective mode after deploy so you can confirm which path the Lambda will take without invoking it.
 
 ## X-Ray annotations
 
