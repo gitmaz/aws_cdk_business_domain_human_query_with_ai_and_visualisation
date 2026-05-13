@@ -12,16 +12,17 @@ This document complements **[README.md](./README.md)**. It explains **repository
 2. [Repository map](#repository-map)
 3. [CDK app entry and stage / env](#cdk-app-entry-and-stage--env)
 4. [Stack: HTTP API and Lambdas](#stack-http-api-and-lambdas)
-5. [Contract: `StructuredQueryIntent` and `BuiltQueries`](#contract-structuredqueryintent-and-builtqueries)
-6. [Domain registry and validation](#domain-registry-and-validation)
-7. [Dispatcher and domain builders](#dispatcher-and-domain-builders)
-8. [Intent Lambda (AI_MODE + X-Ray)](#intent-lambda-ai_mode--x-ray)
-9. [Query dispatch Lambda](#query-dispatch-lambda)
-10. [CDK context: default log groups](#cdk-context-default-log-groups)
-11. [Build, synth, deploy](#build-synth-deploy)
-12. [HTTP examples (curl)](#http-examples-curl)
-13. [Security and operational checklist](#security-and-operational-checklist)
-14. [Future work (Step Functions, Bedrock, execution)](#future-work-step-functions-bedrock-execution)
+5. [Grafana visualization — who creates the dashboard?](#grafana-visualization--who-creates-the-dashboard)
+6. [Contract: `StructuredQueryIntent` and `BuiltQueries`](#contract-structuredqueryintent-and-builtqueries)
+7. [Domain registry and validation](#domain-registry-and-validation)
+8. [Dispatcher and domain builders](#dispatcher-and-domain-builders)
+9. [Intent Lambda (AI_MODE + X-Ray)](#intent-lambda-ai_mode--x-ray)
+10. [Query dispatch Lambda](#query-dispatch-lambda)
+11. [CDK context: default log groups](#cdk-context-default-log-groups)
+12. [Build, synth, deploy](#build-synth-deploy)
+13. [HTTP examples (curl)](#http-examples-curl)
+14. [Security and operational checklist](#security-and-operational-checklist)
+15. [Future work (Step Functions, Bedrock, execution)](#future-work-step-functions-bedrock-execution)
 
 ---
 
@@ -158,7 +159,42 @@ const lambdaDefaults = {
 - **`POST /intent`** → **`intentFn`**
 - **`POST /query/build`** → **`queryFn`**
 
-**Outputs:** **`HttpApiUrl`**, **`Stage`**.
+**Outputs:** **`HttpApiUrl`**, **`Stage`**, plus (for the visualize Lambda) **`GrafanaMode`**, **`GrafanaBacking`**, **`GrafanaUrl`** — see the next section.
+
+---
+
+## Grafana visualization — who creates the dashboard?
+
+**Files:** [`lib/business-domain-human-query-stack.ts`](./lib/business-domain-human-query-stack.ts), [`lib/grafana-workspace-construct.ts`](./lib/grafana-workspace-construct.ts), [`lambda/grafana-visualize/`](./lambda/grafana-visualize/), [`docker/grafana/`](./docker/grafana/)
+
+**Short answer:** the **CDK stack does not create the dashboard**. It only **points** the visualize Lambda at a dashboard **UID** (default **`ai-query-playground`**) that must already exist in the target Grafana. Dashboard creation is **out-of-band** and stage-specific.
+
+### Responsibility split
+
+| Layer | What it does | What it does **not** do |
+| ----- | ------------ | ----------------------- |
+| **CDK stack** (this repo) | Sets **`GRAFANA_DEFAULT_DASHBOARD_UID`** on **`GrafanaVisualizeFn`** (from **`humanQuery.grafana.defaultDashboardUid`** in [`cdk.json`](./cdk.json)). On non-local stages, optionally creates the AMG **workspace** via **`GrafanaWorkspaceConstruct`** (CfnWorkspace). | Never POSTs a dashboard JSON to any Grafana API. There is no `AWS::Grafana::Dashboard` CloudFormation resource. |
+| **Local Grafana Docker** (`stage=local`) | **Creates the dashboard** by file provisioning. [`docker/grafana/provisioning/dashboards/dashboards.yaml`](./docker/grafana/provisioning/dashboards/dashboards.yaml) tells Grafana to import every JSON in [`docker/grafana/dashboards/`](./docker/grafana/dashboards/); the bundled [`ai-query-playground.json`](./docker/grafana/dashboards/ai-query-playground.json) defines the **`dynamicQuery`** *Textbox* template variable and panels whose expression is **`${dynamicQuery}`**. | Not a CDK / CloudFormation step — it happens inside the Grafana container on `npm run grafana:local:up`. |
+| **AMG operator** (`stage=dev|test|prod`) | Authors the dashboard inside the AMG workspace **manually** (or via Grafana Terraform / custom-resource POST to `/api/dashboards/db`). The UID must match **`GRAFANA_DEFAULT_DASHBOARD_UID`** or callers must pass `dashboardUid` per request. | Workspace creation is automatable via [`GrafanaWorkspaceConstruct`](./lib/grafana-workspace-construct.ts), but dashboard contents are not part of `CfnWorkspace`. |
+
+### Where the URL builder reads the UID
+
+`buildVariableDashboardUrl` (in [`lambda/grafana-visualize/grafana-url.ts`](./lambda/grafana-visualize/grafana-url.ts)) only emits **`/d/<dashboardUid>?var-dynamicQuery=<encoded query>&from=...&to=...`** — there is no API call from the Lambda in the default `mode: "variable"` path. The target Grafana then substitutes **`${dynamicQuery}`** in the dashboard panel **at page-load** using the URL parameter (Grafana's template-variable URL-sync feature, governed by `skipUrlSync: false` on the variable). See [README.md — Grafana](./README.md#grafana--stage-aware-backing) and the worked example in [`code_generation_context_2.md`](./code_generation_context_2.md).
+
+### Pointing at a different dashboard
+
+- **Per request:** pass `"dashboardUid": "<uid>"` in the `POST /visualize` body.
+- **Per environment:** change `humanQuery.grafana.defaultDashboardUid` in [`cdk.json`](./cdk.json) (or set `GRAFANA_DEFAULT_DASHBOARD_UID` env), then redeploy.
+
+### Seeding the AMG dashboard later (optional)
+
+Three realistic approaches when manual authoring becomes a bottleneck — **none of them via `CfnWorkspace`**:
+
+1. **CDK custom resource** — Lambda-backed resource that does `POST /api/dashboards/db` to the AMG workspace at deploy time, using a service-account token from Secrets Manager. Reuse [`docker/grafana/dashboards/ai-query-playground.json`](./docker/grafana/dashboards/ai-query-playground.json) as the body.
+2. **Grafana Terraform provider** (`grafana/grafana`) — run alongside CDK in CI; declarative dashboard / folder / data-source resources.
+3. **Manual JSON import** — copy the same bundled dashboard JSON through the AMG console's *Dashboards → Import* in one click; useful for the first AMG deploy.
+
+For the end-to-end IAM Identity Center → AMG group-to-role flow (independent of dashboard creation), see [`grafana-guide.md`](./grafana-guide.md).
 
 ---
 
