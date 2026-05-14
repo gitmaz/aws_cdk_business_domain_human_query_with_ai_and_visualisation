@@ -6,7 +6,7 @@ AWS CDK app that implements the architecture in **[`code_generation_context.md`]
 2. **Structured intent** → **`POST /query/build`** → **domain query builders** → **Logs Insights query string** + **X-Ray filter expression** + metadata for **Grafana** / operators.
 3. **Built query** (or `structuredIntent`) → **`POST /visualize`** → **Grafana variable-driven dashboard URL** (`?var-dynamicQuery=...`) + optional Image Renderer PNG. Grafana is **stage-aware**: a **local Docker** Grafana (provisioned with CloudWatch + X-Ray datasources against LocalStack) for **`stage=local`**, and **Amazon Managed Grafana** (optionally CDK-created via `CfnWorkspace`) for **`dev` / `test` / `prod`**.
 
-**Developer guide:** **[README-dev.md](./README-dev.md)** · **LocalStack:** **[LOCALSTACK.md](./LOCALSTACK.md)** · **Windows CDK bundling:** **[WINDOWS-CDK-BUNDLING.md](./WINDOWS-CDK-BUNDLING.md)** · **Quick local path (LocalStack + Grafana + SPA):** **[`0-fast-track.txt`](./0-fast-track.txt)**
+**Developer guide:** **[README-dev.md](./README-dev.md)** · **LocalStack:** **[LOCALSTACK.md](./LOCALSTACK.md)** · **Windows CDK bundling:** **[WINDOWS-CDK-BUNDLING.md](./WINDOWS-CDK-BUNDLING.md)** · **Quick local path (LocalStack + Grafana + SPA):** **[`0-fast-track.md`](./0-fast-track.md)**
 
 **Testing:** **[README-test.md](./README-test.md)** — **Unit:** `npm test` or `npm run test:watch`. **E2E:** run `npm run test:e2e:install` once; deploy the HTTP API (e.g. `npm run deploy:local`); set **`PLAYWRIGHT_API_BASE_URL`** to **HttpApiUrl** (or run **`npm run playwright:print-env`** and paste the printed line); then **`npm run test:e2e`** (or **`npm run test:e2e:ui`**).
 

@@ -112,6 +112,20 @@ VITE_API_BASE_URL=https://...paste HttpApiUrl from print-env...
 npm run spa:dev
 ```
 
+
+Note:
+npm run spa:dev (local dev)
+VITE_API_BASE_URL comes from .env.local (put it there using npm run playwright:print-env after deploy) when Vite starts.
+You do not need npm run spa:build when the API base URL changes.
+Do this: put the new HttpApiUrl from the new deploy into spa/.env.local, then stop and run npm run spa:dev again (Vite only reads those vars at startup).
+npm run spa:build (static spa/dist, preview, or Lambda/CDK bundle)
+VITE_* values are inlined at build time into the JS bundle.
+If a new stack deploy gives a different HttpApiUrl, the old build still has the old URL until you rebuild.
+Do this: update spa/.env.local (or whatever env you use for the build), run npm run spa:build, then use the new dist (and if you host that bundle on Lambda via CDK, redeploy so the new asset is published).
+Summary: Dev = no rebuild, restart dev server + update .env.local. Static/production build = yes, rebuild when the API base URL changes.
+
+
+
 3. Open **http://localhost:3005/** (port is set in `spa/vite.config.ts`).
 
 ---
