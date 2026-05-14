@@ -20,6 +20,7 @@
     "synth:local:docker": "cdk synth -c stage=local -c useDockerBundling=true",
     "deploy:local": "node scripts/deploy-local-localstack.mjs",
     "destroy:local": "node scripts/destroy-local-localstack.mjs",
+    "localstack:start": "py -3.12 -m localstack.cli.main start -d -s localstack:4.12",
     "grafana:local:up": "node scripts/grafana-local-up.mjs",
     "grafana:local:up:renderer": "node scripts/grafana-local-up.mjs --renderer",
     "grafana:local:down": "node scripts/grafana-local-down.mjs",
