@@ -196,6 +196,8 @@ npm run grafana:local:down               # stop
 npm run grafana:local:down:purge         # stop + delete the persisted Grafana volume
 ```
 
+**Smoke test (LocalStack logs → Grafana):** ingest sample events with the AWS CLI against **`http://127.0.0.1:4566`**, then run Logs Insights in Grafana **Explore** or on **`ai-query-playground`** (use a **`SOURCE '/aws/lambda/...'`** query when panels have empty log group lists). Step-by-step: **[LOCALSTACK.md § 5](./LOCALSTACK.md#5-local-grafana-docker-visualization-layer)** — subsection *Grafana smoke test (LocalStack + sample logs)*.
+
 Bundled provisioning (`docker/grafana/`):
 
 - `provisioning/datasources/datasources.yaml` — **CloudWatch** (UID `cloudwatch`) and **X-Ray** (UID `xray`) datasources both pointing at LocalStack on `http://host.docker.internal:4566` with dummy `test`/`test` keys (matches `deploy:local`).

@@ -470,5 +470,6 @@ curl -sS -X POST "$API/query/build" \
 
 - [README.md](./README.md) — quick start, stages, API overview  
 - [README-test.md](./README-test.md) — unit tests and Playwright E2E  
+- [LOCALSTACK.md](./LOCALSTACK.md) — LocalStack deploy; **§ 5** includes **Grafana smoke test** (ingest logs + Explore + `/visualize`)  
 - [WINDOWS-CDK-BUNDLING.md](./WINDOWS-CDK-BUNDLING.md) — Windows PowerShell / CLR failures during **`NodejsFunction`** bundling  
 - [code_generation_context.md](./code_generation_context.md) — architecture intent and Grafana / X-Ray narrative  

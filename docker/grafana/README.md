@@ -32,6 +32,8 @@ After `up`, sanity-check from the host:
 curl http://localhost:3000/api/health
 ```
 
+**Full smoke test (ingest logs into LocalStack → Explore → dashboard `SOURCE` → optional `POST /visualize`):** see **[LOCALSTACK.md § 5 — Local Grafana Docker](./LOCALSTACK.md#5-local-grafana-docker-visualization-layer)** (subsection **Grafana smoke test (LocalStack + sample logs)**).
+
 ## What gets provisioned
 
 | Resource | UID / name | Notes |

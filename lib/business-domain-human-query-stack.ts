@@ -1,6 +1,7 @@
 import * as path from "path";
 import * as cdk from "aws-cdk-lib";
 import { CfnOutput, Duration } from "aws-cdk-lib";
+import * as apigateway from "aws-cdk-lib/aws-apigateway";
 import * as apigwv2 from "aws-cdk-lib/aws-apigatewayv2";
 import * as apigwIntegrations from "aws-cdk-lib/aws-apigatewayv2-integrations";
 import * as iam from "aws-cdk-lib/aws-iam";
@@ -242,37 +243,78 @@ export class BusinessDomainHumanQueryStack extends cdk.Stack {
       secret.grantRead(visualizeFn);
     }
 
-    const httpApi = new apigwv2.HttpApi(this, "HumanQueryHttpApi", {
-      apiName: `human-query-intent-${stage}`,
-      corsPreflight: {
-        allowHeaders: ["content-type", "authorization"],
-        allowMethods: [apigwv2.CorsHttpMethod.POST, apigwv2.CorsHttpMethod.OPTIONS],
-        allowOrigins: ["*"],
-      },
-    });
+    /**
+     * **LocalStack Community:** CloudFormation often records `AWS::ApiGatewayV2::*` as deployed
+     * fallbacks with `PhysicalResourceId: unknown` — there is no working HTTP API. **REST (v1)**
+     * is supported for real invokes on typical Community builds; routes and JSON bodies match the
+     * HTTP API stage (`POST` + `AWS_PROXY` → same Lambda handlers).
+     *
+     * **AWS (`dev` | `test` | `prod`):** keep **HTTP API (v2)** — lower latency, native CORS, same
+     * paths as local.
+     */
+    if (stage === "local") {
+      const restApi = new apigateway.RestApi(this, "HumanQueryRestApi", {
+        restApiName: `human-query-intent-${stage}`,
+        description: "REST API v1 for LocalStack (HttpApi v2 not materialized on Community)",
+        deployOptions: {
+          stageName: "local",
+          tracingEnabled: false,
+        },
+        defaultCorsPreflightOptions: {
+          allowOrigins: apigateway.Cors.ALL_ORIGINS,
+          allowMethods: ["POST", "OPTIONS"],
+          allowHeaders: ["Content-Type", "Authorization"],
+        },
+        cloudWatchRole: false,
+      });
 
-    httpApi.addRoutes({
-      path: "/intent",
-      methods: [apigwv2.HttpMethod.POST],
-      integration: new apigwIntegrations.HttpLambdaIntegration("IntentIntegration", intentFn),
-    });
+      const intentIntegration = new apigateway.LambdaIntegration(intentFn);
+      const queryIntegration = new apigateway.LambdaIntegration(queryFn);
+      const visualizeIntegration = new apigateway.LambdaIntegration(visualizeFn);
 
-    httpApi.addRoutes({
-      path: "/query/build",
-      methods: [apigwv2.HttpMethod.POST],
-      integration: new apigwIntegrations.HttpLambdaIntegration("QueryBuildIntegration", queryFn),
-    });
+      restApi.root.addResource("intent").addMethod("POST", intentIntegration);
+      const query = restApi.root.addResource("query");
+      query.addResource("build").addMethod("POST", queryIntegration);
+      restApi.root.addResource("visualize").addMethod("POST", visualizeIntegration);
 
-    httpApi.addRoutes({
-      path: "/visualize",
-      methods: [apigwv2.HttpMethod.POST],
-      integration: new apigwIntegrations.HttpLambdaIntegration("GrafanaVisualizeIntegration", visualizeFn),
-    });
+      new CfnOutput(this, "HttpApiUrl", {
+        value: restApi.url,
+        description:
+          "Base URL (REST API v1 on LocalStack) for POST /intent, POST /query/build, POST /visualize",
+      });
+    } else {
+      const httpApi = new apigwv2.HttpApi(this, "HumanQueryHttpApi", {
+        apiName: `human-query-intent-${stage}`,
+        corsPreflight: {
+          allowHeaders: ["content-type", "authorization"],
+          allowMethods: [apigwv2.CorsHttpMethod.POST, apigwv2.CorsHttpMethod.OPTIONS],
+          allowOrigins: ["*"],
+        },
+      });
 
-    new CfnOutput(this, "HttpApiUrl", {
-      value: httpApi.apiEndpoint,
-      description: "Base URL for POST /intent, POST /query/build, and POST /visualize",
-    });
+      httpApi.addRoutes({
+        path: "/intent",
+        methods: [apigwv2.HttpMethod.POST],
+        integration: new apigwIntegrations.HttpLambdaIntegration("IntentIntegration", intentFn),
+      });
+
+      httpApi.addRoutes({
+        path: "/query/build",
+        methods: [apigwv2.HttpMethod.POST],
+        integration: new apigwIntegrations.HttpLambdaIntegration("QueryBuildIntegration", queryFn),
+      });
+
+      httpApi.addRoutes({
+        path: "/visualize",
+        methods: [apigwv2.HttpMethod.POST],
+        integration: new apigwIntegrations.HttpLambdaIntegration("GrafanaVisualizeIntegration", visualizeFn),
+      });
+
+      new CfnOutput(this, "HttpApiUrl", {
+        value: httpApi.apiEndpoint,
+        description: "Base URL (HTTP API v2) for POST /intent, POST /query/build, and POST /visualize",
+      });
+    }
     new CfnOutput(this, "Stage", { value: stage });
     new CfnOutput(this, "GrafanaMode", {
       value: grafanaMode,

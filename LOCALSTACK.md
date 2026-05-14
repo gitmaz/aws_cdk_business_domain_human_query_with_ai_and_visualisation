@@ -2,7 +2,7 @@
 
 Deploy the same CDK app as AWS, but with **context `stage=local`**: dummy account **`000000000000`**, path-style S3 for Lambda assets, and API Gateway + Lambda on LocalStack.
 
-This stack is smaller than **`aws_cdk_invoice_processing_and_approval`** (no Cognito, DynamoDB, Step Functions, Textract). You only need LocalStack services that CDK touches for **`NodejsFunction`** + HTTP API: **S3** (assets), **CloudFormation**, **Lambda**, **API Gateway v2**, **IAM**, **Logs** (as supported by your LocalStack edition).
+This stack is smaller than **`aws_cdk_invoice_processing_and_approval`** (no Cognito, DynamoDB, Step Functions, Textract). For **`stage=local`**, CDK deploys a **REST API (API Gateway v1)** so invokes work on **LocalStack Community** (v2 HTTP APIs are often CFN fallbacks with no real `ApiId`). For **`dev` / `test` / `prod`**, the app still uses **HTTP API (v2)** on AWS. LocalStack needs **S3** (assets), **CloudFormation**, **Lambda**, **API Gateway (v1 for local)**, **IAM**, **Logs** (as supported by your LocalStack edition).
 
 ---
 
@@ -45,15 +45,17 @@ The script sets dummy credentials, **`CDK_DEFAULT_ACCOUNT=000000000000`**, **`AW
 
 This stack sets Lambda **`Tracing.ACTIVE`** (CDK adds **`xray:PutTraceSegments`** / **`PutTelemetryRecords`**) and the intent Lambda uses **`aws-xray-sdk-core`** for annotations when a segment exists.
 
-**Short answer:** LocalStack **Community** does expose **X-Ray–style APIs** locally (for example **`PutTraceSegments`**, **`GetTraceSummaries`**, **`BatchGetTraces`**) and the current Lambda implementation notes that the **X-Ray daemon is initialized** in the Lambda execution path — see [LocalStack X-Ray](https://docs.localstack.cloud/aws/services/xray/) and the Lambda provider notes in [LocalStack Lambda](https://docs.localstack.cloud/aws/services/lambda/). It is **not** a full clone of the AWS X-Ray control plane and console (for example, documented limitations around **correlating multiple segments** into one aggregated trace).
+**Important (LocalStack 4.x Community, unauthenticated “latest community” image):** the **`/_localstack/health`** JSON often **does not list `xray`**, and **`aws xray put-trace-segments --endpoint-url http://127.0.0.1:4566`** may return **`InternalFailure`** with a message like *“The API for service `xray` is either not included in your current license plan or has not yet been emulated by LocalStack.”* That means **your running LocalStack build is not serving the X-Ray control-plane API on your plan**, not merely “health forgot a key.” Do **not** rely on Grafana’s **X-Ray (LocalStack)** datasource in `docker/grafana/` against that instance until X-Ray is actually accepted (e.g. a **licensed / Pro-capable** LocalStack image and auth, or **real AWS** for X-Ray).
 
-**For this project:** **`POST /intent`** and **`POST /query/build`** do **not** depend on traces for JSON responses; the handler only calls **`getSegment()?.addAnnotation(...)`** when a segment is present. So **Community is enough to exercise the APIs on LocalStack** even if trace quality or UI parity is lower than on AWS. For production-style trace validation, use a **real AWS** account or LocalStack’s paid tiers if you need stricter parity.
+**For this project:** **`POST /intent`** and **`POST /query/build`** do **not** depend on X-Ray for JSON responses; the handler only calls **`getSegment()?.addAnnotation(...)`** when a segment exists. **Local Grafana smoke tests** in **[§ 5](#5-local-grafana-docker-visualization-layer)** use **CloudWatch Logs** only — that path matches **`"logs": "available"`** in health and works on Community. For **production-style** X-Ray + Grafana, use a **real AWS** account (or a LocalStack edition that documents X-Ray as included for your license).
+
+See also [LocalStack X-Ray](https://docs.localstack.cloud/aws/services/xray/) and [feature coverage / licensing](https://docs.localstack.cloud/references/coverage/) for your exact version.
 
 CDK CLI is invoked via **`npx -p aws-cdk@2.1121.0`** so LocalStack compatibility matches **`aws_cdk_invoice_processing_and_approval`**.
 
 Stack name: **`BusinessDomainHumanQuery-local`**.
 
-Outputs: **`HttpApiUrl`**, **`Stage`**.
+Outputs: **`HttpApiUrl`** (REST stage invoke URL for **`local`**; HTTP API base URL on other stages), **`Stage`**.
 
 Destroy:
 
@@ -110,7 +112,7 @@ npm run grafana:local:down:purge         # stop + drop the persisted Grafana vol
 Provisioned automatically (see `docker/grafana/`):
 
 - **CloudWatch (LocalStack)** datasource — UID **`cloudwatch`** — endpoint `http://host.docker.internal:4566`, region `us-east-1`.
-- **X-Ray (LocalStack)** datasource — UID **`xray`** — same endpoint (X-Ray plugin auto-installed via `GF_INSTALL_PLUGINS=grafana-x-ray-datasource`).
+- **X-Ray (LocalStack)** datasource — UID **`xray`** — same endpoint (X-Ray plugin auto-installed via `GF_INSTALL_PLUGINS=grafana-x-ray-datasource`). **May not work** on plain **Community** if LocalStack rejects **`xray`** APIs (see [§ 2 — X-Ray on LocalStack Community](#x-ray-on-localstack-community-no-login)); use **CloudWatch** for smoke tests until X-Ray is enabled on your LocalStack edition.
 - Dashboard **`ai-query-playground`** with a **`dynamicQuery`** Textbox template variable; panels' CloudWatch Logs Insights expression is **`${dynamicQuery}`** so the variable-driven URL from `/visualize` Just Works.
 
 ### Networking — Lambda ↔ Grafana
@@ -144,24 +146,131 @@ The bundled `grafana.ini` enables **anonymous Admin** (`GF_AUTH_ANONYMOUS_ENABLE
 | **`GrafanaUrl`** | **`http://host.docker.internal:3000`** (or operator override) |
 | **`HttpApiUrl`** | LocalStack HTTP API base — `POST /visualize` lives here |
 
-### Sanity check end-to-end (variable-driven)
+### Grafana smoke test (LocalStack + sample logs)
 
-```bash
-npm run grafana:local:up
-npm run deploy:local
+**Goal:** confirm Grafana’s **CloudWatch (LocalStack)** datasource can run **Logs Insights** against log data that exists only in LocalStack (not AWS).
 
-# Replace <HttpApiUrl> with the LocalStack HTTP API base from the stack output:
-curl -X POST <HttpApiUrl>/visualize \
-  -H 'content-type: application/json' \
-  -d '{
-    "query": "fields @timestamp, @message | sort @timestamp desc | limit 20",
-    "dashboardUid": "ai-query-playground"
-  }'
+**Prerequisites**
+
+1. LocalStack is up — **`curl http://127.0.0.1:4566/_localstack/health`** (see [§ 1](#1-install-and-start-localstack)).
+2. **`npm run grafana:local:up`** — Grafana at **http://localhost:3000** (anonymous Admin).
+3. Use region **`us-east-1`** for CLI and queries (matches [`docker/grafana/provisioning/datasources/datasources.yaml`](./docker/grafana/provisioning/datasources/datasources.yaml)).
+
+#### 1) Put sample events into LocalStack CloudWatch Logs
+
+Use the same demo log group name as **`cdk.json`** → **`/aws/lambda/warehouse-service-demo`**.
+
+**PowerShell (Windows)**
+
+```powershell
+$ep = "http://127.0.0.1:4566"
+$region = "us-east-1"
+$lg = "/aws/lambda/warehouse-service-demo"
+$ls = "demo-stream"
+$env:AWS_ACCESS_KEY_ID = "test"
+$env:AWS_SECRET_ACCESS_KEY = "test"
+
+aws logs create-log-group --log-group-name $lg --endpoint-url $ep --region $region 2>$null
+aws logs create-log-stream --log-group-name $lg --log-stream-name $ls --endpoint-url $ep --region $region 2>$null
+
+$ts = [int64]([DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds())
+$body = '{"logEvents":[{"timestamp":' + $ts + ',"message":"warehouse demo: inventory delay check SYD-1 latency=120ms"}]}'
+aws logs put-log-events --log-group-name $lg --log-stream-name $ls --cli-input-json $body --endpoint-url $ep --region $region
 ```
 
-The response includes `grafana.dashboardUrl` — open it in a browser to see the dashboard rendered against the LocalStack-backed CloudWatch datasource.
+If **`put-log-events`** fails on a **second** write to the same stream, pass **`--sequence-token`** from the previous command’s output.
 
----
+**Bash**
+
+```bash
+export AWS_ACCESS_KEY_ID=test AWS_SECRET_ACCESS_KEY=test
+EP=http://127.0.0.1:4566
+R=us-east-1
+LG=/aws/lambda/warehouse-service-demo
+LS=demo-stream
+
+aws logs create-log-group --log-group-name "$LG" --endpoint-url "$EP" --region "$R" 2>/dev/null || true
+aws logs create-log-stream --log-group-name "$LG" --log-stream-name "$LS" --endpoint-url "$EP" --region "$R" 2>/dev/null || true
+TS=$(($(date +%s) * 1000))
+aws logs put-log-events --log-group-name "$LG" --log-stream-name "$LS" \
+  --log-events "timestamp=${TS},message=warehouse demo: inventory delay SYD-1 latency=120ms" \
+  --endpoint-url "$EP" --region "$R"
+```
+
+#### 2) Verify in Grafana — Explore (fastest)
+
+1. Open **http://localhost:3000** → **Explore**.
+2. Data source: **CloudWatch (LocalStack)**.
+3. Query mode: **CloudWatch Logs** · Region: **`us-east-1`**.
+4. Log groups: select **`/aws/lambda/warehouse-service-demo`** (or type it if shown).
+5. Run:
+
+```sql
+fields @timestamp, @message
+| filter @message like /warehouse|delay|SYD/
+| sort @timestamp desc
+| limit 20
+```
+
+You should see the line ingested via **`put-log-events`**.
+
+#### 3) Verify on the bundled dashboard — use `SOURCE` in the query
+
+The playground dashboard panels use **`${dynamicQuery}`** with **`logGroups: []`** in JSON, so Grafana may not know which log group to scan until you either pick log groups in the panel UI or embed the group in the query with **`SOURCE`**:
+
+```sql
+SOURCE '/aws/lambda/warehouse-service-demo'
+| fields @timestamp, @message
+| filter @message like /warehouse|delay|SYD/
+| sort @timestamp desc
+| limit 20
+```
+
+Paste that into the **`dynamicQuery`** textbox on **Dashboards → AI Query Playground**, or open a URL with **`?var-dynamicQuery=<URL-encoded query>`** (the **`POST /visualize`** response builds this for you).
+
+**Project-shaped example** (closer to warehouse-style filters):
+
+```sql
+SOURCE '/aws/lambda/warehouse-service-demo'
+| fields @timestamp, @message
+| filter @message like /delay|inventory|warehouse|SYD/i
+| sort @timestamp desc
+| limit 50
+```
+
+#### 4) Optional — smoke test `POST /visualize` after stack deploy
+
+```bash
+npm run deploy:local
+```
+
+Replace **`<HttpApiUrl>`** with the **`HttpApiUrl`** stack output (same base you use for **`/intent`**).
+
+```bash
+curl -sS -X POST "<HttpApiUrl>/visualize" \
+  -H "content-type: application/json" \
+  -d "{\"query\":\"SOURCE '/aws/lambda/warehouse-service-demo' | fields @timestamp, @message | sort @timestamp desc | limit 20\",\"dashboardUid\":\"ai-query-playground\"}"
+```
+
+**PowerShell** (escape double quotes inside the JSON):
+
+```powershell
+$api = "<HttpApiUrl>"
+$body = '{"query":"SOURCE ''/aws/lambda/warehouse-service-demo'' | fields @timestamp, @message | sort @timestamp desc | limit 20","dashboardUid":"ai-query-playground"}'
+Invoke-RestMethod -Method Post -Uri "$api/visualize" -ContentType "application/json" -Body $body
+```
+
+Open **`grafana.dashboardUrl`** from the JSON response in a browser (variable-driven URL; default **`mode: "variable"`** does not call Grafana from the Lambda).
+
+#### Smoke test troubleshooting
+
+| Symptom | What to check |
+| ------- | ------------- |
+| **No rows in Grafana** | Log group name matches **`SOURCE '...'`**; region **`us-east-1`**; Grafana time range includes “now”; LocalStack actually received **`put-log-events`** (re-run CLI, check for errors). |
+| **Grafana cannot reach LocalStack** | LocalStack on **host** at **`127.0.0.1:4566`**; Grafana container uses **`host.docker.internal:4566`** (Docker Desktop). On **Linux**, see [Networking — Lambda ↔ Grafana](#networking--lambda--grafana) (shared **`human-query-net`** or **`host-gateway`**). |
+| **Insights errors in Grafana** | LocalStack Community parity is not identical to AWS — try a minimal query first: **`fields @timestamp, @message \| limit 5`**. Upgrade LocalStack or check [LocalStack CloudWatch docs](https://docs.localstack.cloud/aws/services/cloudwatch/) for your version. |
+| **`/visualize` returns a URL but browser shows empty panels** | Default textbox query has no **`SOURCE`** — use the **`SOURCE '...'`** query above or select log groups in the panel and save. |
+| **`aws xray …` returns `InternalFailure` (not in license plan / not emulated)** | Your LocalStack image **does not expose the X-Ray API** on your current plan. **Grafana X-Ray panels** against LocalStack will fail too — use **CloudWatch Logs** for local smoke tests; use **real AWS** or a LocalStack edition that includes X-Ray for your license. See [§ 2 — X-Ray on LocalStack Community](#x-ray-on-localstack-community-no-login). |
 
 ## 6) Playwright E2E against LocalStack
 
