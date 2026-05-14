@@ -76,6 +76,7 @@ npm run destroy:local
 | Calls hit **real AWS** instead of LocalStack | Open a shell **without** **`AWS_PROFILE`** / SSO session vars, or set **`CDK_LOCALSTACK_KEEP_AWS_PROFILE=1`** only if you intentionally use a profile **and** still point APIs at LocalStack. |
 | **Region mismatch** (bootstrap in `us-east-1`, deploy elsewhere) | Set **`CDK_DEFAULT_REGION`** and **`AWS_DEFAULT_REGION`** to the same value before **`npm run deploy:local`**. |
 | **Stale / corrupt `cdk.out`** after a failed deploy | Delete the **`cdk.out`** folder in the repo root, then **`npm run deploy:local`** again. |
+| **Grafana Explore / dashboard:** **`StartQuery` … `'NoneType' object is not iterable`** (HTTP 500 from LocalStack) | **Cause:** LocalStack’s Moto **`StartQuery`** only reads **`logGroupName`** / **`logGroupNames`**. **Grafana 11.x** often sends **`logGroupIdentifiers`** for Logs Insights; Moto ignores them → **`logGroupNames`** is null → crash ([LocalStack #12185](https://github.com/localstack/localstack/issues/12185)). **Fix:** this repo’s **`docker-compose.yml`** pins **`grafana/grafana-oss:12.4.0`**, where non–monitoring-account CloudWatch datasources use **`logGroupNames`** again ([Grafana #113137](https://github.com/grafana/grafana/pull/113137)). Run **`docker compose pull`** in **`docker/grafana/`**, then **`npm run grafana:local:down:purge`** and **`npm run grafana:local:up`**. The **`ai-query-playground`** JSON still sets **`logGroupNames`** for clarity. In **Explore**, pick the log group before **Run query**. |
 
 ---
 
@@ -100,7 +101,7 @@ From **another container** on Docker Desktop (Windows/macOS), point **`AWS_ENDPO
 
 `POST /visualize` (see **[README.md § "Grafana — stage-aware backing"](./README.md#grafana--stage-aware-backing)**) is wired by the CDK stack to a **local Grafana Docker** when `stage=local`. It is **not** a LocalStack-emulated Grafana — it is a real Grafana OSS container with **CloudWatch + X-Ray datasources provisioned against LocalStack** (`http://host.docker.internal:4566`, dummy `test`/`test` keys).
 
-Bring it up beside LocalStack:
+Bring it up beside LocalStack (**Grafana OSS 12.4.x** — avoids **`StartQuery` / `logGroupIdentifiers`** issues with LocalStack Moto; see **§ 3** troubleshooting row):
 
 ```bash
 npm run grafana:local:up                 # http://localhost:3000 (anonymous Admin)
@@ -214,29 +215,29 @@ fields @timestamp, @message
 
 You should see the line ingested via **`put-log-events`**.
 
-#### 3) Verify on the bundled dashboard — use `SOURCE` in the query
+#### 3) Verify on the bundled dashboard — **AI Query Playground**
 
-The playground dashboard panels use **`${dynamicQuery}`** with **`logGroups: []`** in JSON, so Grafana may not know which log group to scan until you either pick log groups in the panel UI or embed the group in the query with **`SOURCE`**:
+The dashboard **`ai-query-playground`** provisions both panels with **`logGroupNames`**: `["/aws/lambda/warehouse-service-demo"]` (legacy field shape) so Grafana’s **`StartQuery`** request includes **`logGroupNames`**, which LocalStack’s Moto layer accepts. Do **not** rely on structured **`logGroups`** (ARN list) for this dashboard on LocalStack — Grafana maps those to **`logGroupIdentifiers`**, which Moto does not handle. Set the **`dynamicQuery`** textbox to a Logs Insights expression (no **`SOURCE …`** line required for that default group), for example:
 
 ```sql
-SOURCE '/aws/lambda/warehouse-service-demo'
-| fields @timestamp, @message
+fields @timestamp, @message
 | filter @message like /warehouse|delay|SYD/
 | sort @timestamp desc
 | limit 20
 ```
 
-Paste that into the **`dynamicQuery`** textbox on **Dashboards → AI Query Playground**, or open a URL with **`?var-dynamicQuery=<URL-encoded query>`** (the **`POST /visualize`** response builds this for you).
-
-**Project-shaped example** (closer to warehouse-style filters):
+If you point panels at **other** log groups, either add them under **Panel → Query options → Log groups** in the UI or embed the group in the query:
 
 ```sql
-SOURCE '/aws/lambda/warehouse-service-demo'
+SOURCE '/aws/lambda/other-log-group'
 | fields @timestamp, @message
-| filter @message like /delay|inventory|warehouse|SYD/i
 | sort @timestamp desc
-| limit 50
+| limit 20
 ```
+
+Paste into **`dynamicQuery`**, or open a URL with **`?var-dynamicQuery=<URL-encoded query>`** (the **`POST /visualize`** response builds this for you).
+
+**After changing `docker/grafana/dashboards/*.json` on disk**, restart the stack so Grafana reloads the file provider: **`npm run grafana:local:down`** then **`npm run grafana:local:up`**, or use **`npm run grafana:local:down:purge`** if the DB still holds an old copy of the dashboard (or wait for **`updateIntervalSeconds`** if you only edited via UI and the path matches).
 
 #### 4) Optional — smoke test `POST /visualize` after stack deploy
 

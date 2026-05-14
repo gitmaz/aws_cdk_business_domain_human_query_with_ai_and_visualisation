@@ -17,8 +17,11 @@ name: human-query-grafana
 #   npm run grafana:local:down
 
 services:
+  # Grafana 11.x often sends StartQuery `logGroupIdentifiers`; LocalStack Moto only accepts
+  # `logGroupName` / `logGroupNames` → 500 + `'NoneType' object is not iterable`. Grafana 12.4+
+  # limits identifiers to monitoring-account datasources (grafana/grafana#113137).
   grafana:
-    image: grafana/grafana-oss:11.2.2
+    image: grafana/grafana-oss:12.4.0
     container_name: human-query-grafana
     restart: unless-stopped
     ports:

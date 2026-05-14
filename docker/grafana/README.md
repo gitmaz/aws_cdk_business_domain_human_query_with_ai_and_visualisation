@@ -1,7 +1,7 @@
+l`. There is **no** LocalStack-emulated Grafana — this is the actual upstream image with provisioning files mounted in.
 # Local Grafana Docker (visualization layer for `stage=local`)
 
-Real Grafana OSS container with **CloudWatch + X-Ray datasources provisioned against LocalStack**, used by the visualize Lambda when `stage=local`. There is **no** LocalStack-emulated Grafana — this is the actual upstream image with provisioning files mounted in.
-
+Real Grafana OSS container with **CloudWatch + X-Ray datasources provisioned against LocalStack**, used by the visualize Lambda when `stage=loca
 See **[../../README.md § "Grafana — stage-aware backing"](../../README.md#grafana--stage-aware-backing)** for the full design (including AMG via `CfnWorkspace` for non-local stages) and **[../../LOCALSTACK.md § 5](../../LOCALSTACK.md#5-local-grafana-docker-visualization-layer)** for end-to-end verification.
 
 ## Layout
@@ -32,7 +32,7 @@ After `up`, sanity-check from the host:
 curl http://localhost:3000/api/health
 ```
 
-**Full smoke test (ingest logs into LocalStack → Explore → dashboard `SOURCE` → optional `POST /visualize`):** see **[LOCALSTACK.md § 5 — Local Grafana Docker](./LOCALSTACK.md#5-local-grafana-docker-visualization-layer)** (subsection **Grafana smoke test (LocalStack + sample logs)**).
+**Full smoke test (ingest logs into LocalStack → Explore → AI Query Playground dashboard → optional `POST /visualize`):** see **[LOCALSTACK.md § 5 — Local Grafana Docker](./LOCALSTACK.md#5-local-grafana-docker-visualization-layer)** (subsection **Grafana smoke test (LocalStack + sample logs)**).
 
 ## What gets provisioned
 
@@ -40,7 +40,7 @@ curl http://localhost:3000/api/health
 | -------- | ---------- | ----- |
 | CloudWatch datasource | `cloudwatch` (default) | `endpoint=http://host.docker.internal:4566`, region `us-east-1`, keys `test`/`test` |
 | X-Ray datasource | `xray` | Same endpoint; plugin `grafana-x-ray-datasource` auto-installed via `GF_INSTALL_PLUGINS` |
-| Dashboard | `ai-query-playground` | Two panels (timeseries + logs) bound to `${dynamicQuery}`; default time range `now-24h..now` |
+| Dashboard | `ai-query-playground` | Two panels (timeseries + logs) bound to `${dynamicQuery}`; targets use **`logGroupNames`** (not structured **`logGroups`**) for LocalStack **`StartQuery`**. Default time range `now-24h..now` |
 | Template variable | `dynamicQuery` (Textbox) | Set by Lambda via URL: `?var-dynamicQuery=<encoded query>` |
 
 UIDs match the AMG-side defaults (`cloudwatch`, `xray`) so the same Lambda `GRAFANA_DEFAULT_DATASOURCE_UID` env value works for both local Docker and AMG without per-stage tweaks.

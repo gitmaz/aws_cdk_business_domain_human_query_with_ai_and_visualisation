@@ -16,11 +16,12 @@
       "targets": [
         {
           "refId": "A",
+          "id": "cw-logs-panel1",
           "datasource": { "type": "cloudwatch", "uid": "cloudwatch" },
           "queryMode": "Logs",
           "region": "us-east-1",
           "expression": "${dynamicQuery}",
-          "logGroups": [],
+          "logGroupNames": ["/aws/lambda/warehouse-service-demo"],
           "statsGroups": []
         }
       ],
@@ -39,11 +40,12 @@
       "targets": [
         {
           "refId": "A",
+          "id": "cw-logs-panel2",
           "datasource": { "type": "cloudwatch", "uid": "cloudwatch" },
           "queryMode": "Logs",
           "region": "us-east-1",
           "expression": "${dynamicQuery}",
-          "logGroups": [],
+          "logGroupNames": ["/aws/lambda/warehouse-service-demo"],
           "statsGroups": []
         }
       ],
@@ -76,6 +78,6 @@
   "timezone": "",
   "title": "AI Query Playground",
   "uid": "ai-query-playground",
-  "version": 1,
+  "version": 4,
   "weekStart": ""
 }
