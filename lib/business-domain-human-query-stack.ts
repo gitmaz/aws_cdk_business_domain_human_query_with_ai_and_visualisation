@@ -13,6 +13,8 @@ import { Construct } from "constructs";
 import { resolveAiMode } from "../lambda/intent-extract/ai-mode";
 import { useDockerLambdaBundling } from "./bundling-flags";
 import { GrafanaWorkspaceConstruct, type GrafanaContext } from "./grafana-workspace-construct";
+import { resolveSpaHosting } from "./resolve-spa-hosting";
+import { SpaHostingConstruct } from "./spa-hosting-construct";
 import type { StageId } from "./stage-config";
 
 export interface BusinessDomainHumanQueryStackProps extends cdk.StackProps {
@@ -331,6 +333,16 @@ export class BusinessDomainHumanQueryStack extends cdk.Stack {
         value: grafanaUrl,
         description: "Effective Grafana endpoint baked into the visualize Lambda's GRAFANA_URL env",
       });
+    }
+
+    const spaHostingMode = resolveSpaHosting(this);
+    new CfnOutput(this, "SpaHostingMode", {
+      value: spaHostingMode,
+      description:
+        "From SPA_HOSTING / -c spaHosting: lambda (Function URL) | ec2 (S3 for EC2 sync) | none (skip SPA infra)",
+    });
+    if (spaHostingMode !== "none") {
+      new SpaHostingConstruct(this, "SpaHosting", { stage, mode: spaHostingMode });
     }
   }
 }

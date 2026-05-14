@@ -22,5 +22,5 @@
     "declaration": true,
     "outDir": "dist"
   },
-  "exclude": ["cdk.out", "node_modules", "dist", "lambda", "tests", "e2e"]
+  "exclude": ["cdk.out", "node_modules", "dist", "lambda", "tests", "e2e", "spa"]
 }

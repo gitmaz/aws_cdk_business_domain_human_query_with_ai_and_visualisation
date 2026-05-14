@@ -30,7 +30,10 @@
     "test:e2e": "npx playwright test",
     "test:e2e:ui": "npx playwright test --ui",
     "test:e2e:install": "npx playwright install chromium",
-    "playwright:print-env": "node scripts/print-playwright-env.mjs"
+    "playwright:print-env": "node scripts/print-playwright-env.mjs",
+    "spa:dev": "npm --prefix spa run dev",
+    "spa:build": "npm --prefix spa run build",
+    "spa:preview": "npm --prefix spa run preview"
   },
   "dependencies": {
     "@aws-sdk/client-bedrock-runtime": "^3.787.0",

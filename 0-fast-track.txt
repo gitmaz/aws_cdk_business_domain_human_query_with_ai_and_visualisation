@@ -1,0 +1,128 @@
+# Fast track — local human-query API + Grafana + SPA
+
+Repo root for all commands below:
+
+  maz\aws\serverless\aws_cdk_business_domain_human_query_with_ai_and_visualisation
+
+---
+
+## 1) LocalStack
+
+Start (Python 3.12 + LocalStack CLI; see LOCALSTACK.md for variants):
+
+  npm run localstack:start
+
+Health:
+
+  curl.exe -sS http://127.0.0.1:4566/_localstack/health
+
+(There is no `npm run localstack:up` — use `localstack:start`.)
+
+---
+
+## 2) Local Grafana (optional but needed for real visualize / dashboard links)
+
+  npm run grafana:local:up
+
+---
+
+## 3) Optional — put demo logs into LocalStack Logs
+
+PowerShell (adjust `$region` if you use something other than `us-east-1`):
+
+```powershell
+$ep     = "http://127.0.0.1:4566"
+$region = "us-east-1"
+$lg     = "/aws/lambda/warehouse-service-demo"
+$ls     = "demo-stream"
+$env:AWS_ACCESS_KEY_ID     = "test"
+$env:AWS_SECRET_ACCESS_KEY = "test"
+
+aws logs create-log-group   --log-group-name $lg --endpoint-url $ep --region $region 2>$null
+aws logs create-log-stream  --log-group-name $lg --log-stream-name $ls --endpoint-url $ep --region $region 2>$null
+
+$ts = [int64]([DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds())
+aws logs put-log-events `
+  --log-group-name $lg `
+  --log-stream-name $ls `
+  --log-events "timestamp=$ts,message=warehouse demo: inventory delay check SYD-1 latency=120ms" `
+  --endpoint-url $ep `
+  --region $region
+```
+
+On a **second** write to the same stream, add `--sequence-token <value>` from the previous command’s output (see LOCALSTACK.md under that block).
+
+**Grafana Explore** (same log group) example:
+
+```text
+fields @timestamp, @message
+| filter @message like /warehouse|SYD|delay/
+| sort @timestamp desc
+| limit 50
+```
+
+---
+
+## 4) CDK — synth, deploy LocalStack, print API base URL
+
+```powershell
+cd maz\aws\serverless\aws_cdk_business_domain_human_query_with_ai_and_visualisation
+
+# Fast synth (no SPA Lambda/S3 asset bundle):
+$env:SPA_HOSTING = "none"
+npm run synth:local
+
+# Deploy stack to LocalStack:
+npm run deploy:local
+
+# Print HttpApiUrl for Playwright / SPA:
+npm run playwright:print-env
+```
+
+Copy the printed **`PLAYWRIGHT_API_BASE_URL`** — that is the stack **`HttpApiUrl`** (base only; the SPA appends `/intent` and `/visualize`).
+
+**Quick API smoke test** (replace `$api` with your printed URL; no trailing issues — use `curl.exe` on Windows):
+
+```powershell
+$api = "https://YOUR_ID.execute-api.localhost.localstack.cloud:4566/local/"
+curl.exe -sS -X POST "$api/intent" -H "Content-Type: application/json" -d "{\"message\":\"show warehouse errors last hour\"}"
+```
+
+---
+
+## 5) React SPA (Vite dev server)
+
+1. In **`spa/`**, create **`spa/.env.local`** (gitignored) with at least:
+
+```env
+VITE_APP_STAGE=local
+VITE_API_BASE_URL=https://...paste HttpApiUrl from print-env...
+```
+
+2. From the **CDK project root**:
+
+```powershell
+npm run spa:dev
+```
+
+3. Open **http://localhost:3005/** (port is set in `spa/vite.config.ts`).
+
+---
+
+## 6) Optional — host built SPA on Lambda (same stack)
+
+If you deploy with **`SPA_HOSTING=lambda`**, the output **`SpaLambdaFunctionUrl`** serves **`spa/dist`**. The bundle must include the right API URL: set **`VITE_API_BASE_URL`** in **`.env.local`**, run **`npm run spa:build`**, then redeploy (or use **`SPA_USE_PREBUILT_DIST=1`** after `spa:build` to skip `npm ci` inside the asset container). For day-to-day UI work, **`npm run spa:dev`** is simpler.
+
+**Synth/deploy note:** default **`SPA_HOSTING=lambda`** pulls the SAM Node 20 Docker image for bundling (first pull can take many minutes). Use **`SPA_HOSTING=none`** when you only need the API stack, or **`SPA_USE_PREBUILT_DIST=1`** after **`npm run spa:build`** to reuse **`spa/dist`** without reinstalling deps in the bundle step.
+
+---
+
+## Env / context reference
+
+| Goal | Set |
+|------|-----|
+| Skip SPA infra in CDK | `$env:SPA_HOSTING = "none"` or `-c spaHosting=none` |
+| Publish SPA to Lambda URL | `$env:SPA_HOSTING = "lambda"` (default) |
+| Publish SPA to S3 for EC2 sync | `$env:SPA_HOSTING = "ec2"` (+ see README **SPA hosting**) |
+
+`SPA_HOSTING` overrides CDK context **`spaHosting`** when the env var is set.

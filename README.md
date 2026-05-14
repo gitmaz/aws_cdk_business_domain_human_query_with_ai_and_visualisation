@@ -6,7 +6,7 @@ AWS CDK app that implements the architecture in **[`code_generation_context.md`]
 2. **Structured intent** → **`POST /query/build`** → **domain query builders** → **Logs Insights query string** + **X-Ray filter expression** + metadata for **Grafana** / operators.
 3. **Built query** (or `structuredIntent`) → **`POST /visualize`** → **Grafana variable-driven dashboard URL** (`?var-dynamicQuery=...`) + optional Image Renderer PNG. Grafana is **stage-aware**: a **local Docker** Grafana (provisioned with CloudWatch + X-Ray datasources against LocalStack) for **`stage=local`**, and **Amazon Managed Grafana** (optionally CDK-created via `CfnWorkspace`) for **`dev` / `test` / `prod`**.
 
-**Developer guide:** **[README-dev.md](./README-dev.md)** · **LocalStack:** **[LOCALSTACK.md](./LOCALSTACK.md)** · **Windows CDK bundling:** **[WINDOWS-CDK-BUNDLING.md](./WINDOWS-CDK-BUNDLING.md)**
+**Developer guide:** **[README-dev.md](./README-dev.md)** · **LocalStack:** **[LOCALSTACK.md](./LOCALSTACK.md)** · **Windows CDK bundling:** **[WINDOWS-CDK-BUNDLING.md](./WINDOWS-CDK-BUNDLING.md)** · **Quick local path (LocalStack + Grafana + SPA):** **[`0-fast-track.txt`](./0-fast-track.txt)**
 
 **Testing:** **[README-test.md](./README-test.md)** — **Unit:** `npm test` or `npm run test:watch`. **E2E:** run `npm run test:e2e:install` once; deploy the HTTP API (e.g. `npm run deploy:local`); set **`PLAYWRIGHT_API_BASE_URL`** to **HttpApiUrl** (or run **`npm run playwright:print-env`** and paste the printed line); then **`npm run test:e2e`** (or **`npm run test:e2e:ui`**).
 
@@ -85,7 +85,35 @@ npx cdk deploy --all -c stage=dev
 
 **`NodejsFunction`** publishes assets during deploy; do **not** use `BootstraplessSynthesizer` with bundled Lambdas.
 
-Outputs: **`HttpApiUrl`**, **`Stage`**.
+Outputs: **`HttpApiUrl`**, **`Stage`**, **`SpaHostingMode`**, and (when hosting is enabled) **`SpaLambdaFunctionUrl`** and/or **EC2 artifact outputs** — see **SPA hosting** below.
+
+## SPA hosting (CDK)
+
+The Vite app under **`spa/`** can be published by the same stack. Choose **before** synth/deploy:
+
+| Mechanism | How to select |
+| --------- | ------------- |
+| **Environment** | **`SPA_HOSTING`** = `lambda` (default) \| `ec2` \| `none` |
+| **CDK context** | **`-c spaHosting=lambda`** (or `ec2`, `none`) — used only if **`SPA_HOSTING`** is unset |
+
+### `lambda` (default)
+
+- Adds a **Lambda** plus a **function URL** that serves the built **`spa/dist`** (SPA fallback to `index.html`).
+- CloudFormation output: **`SpaLambdaFunctionUrl`**. Point **`VITE_API_BASE_URL`** at **`HttpApiUrl`** when you build the SPA for that environment.
+- **Bundling** runs **`npm ci`** + **`npm run build`** inside the CDK asset container (needs **Docker** on the machine running synth/deploy, unless you pre-build — see below).
+
+### `ec2`
+
+- Creates an **S3 bucket** (unless **`SPA_EC2_ARTIFACT_BUCKET`** names an existing bucket), runs **`BucketDeployment`** with prefix **`SPA_EC2_KEY_PREFIX`** (default **`spa/<stage>`**), and outputs an **`aws s3 sync …`** example for copying files onto an **existing EC2** web root.
+- If **`SPA_EC2_INSTANCE_ROLE_ARN`** is set (EC2 instance-profile role), that role is granted **`s3:GetObject`** on the artifact bucket. For an **imported** bucket, ensure the deploy role and **`BucketDeployment`** principal can still write objects.
+
+### `none`
+
+- Skips SPA infrastructure (faster **`cdk synth`** / CI when you do not need the static host).
+
+### `SPA_USE_PREBUILT_DIST`
+
+Set to **`1`** / **`true`** to skip **`npm ci`** in the CDK bundling container and copy only existing **`spa/dist/**`**. Run **`npm run spa:build`** first on the host.
 
 ## API
 

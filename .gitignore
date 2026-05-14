@@ -4,8 +4,11 @@ cdk.out.*/
 dist/
 *.js
 !jest.config.js
+!spa/eslint.config.js
 *.d.ts
-.env
-.env.*
+!spa/**/*.d.ts
+.env*
+!.env.example
+!spa/.env.example
 playwright-report/
 test-results/
