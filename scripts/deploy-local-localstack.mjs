@@ -26,7 +26,7 @@ const cdkOutAbs = join(repoRoot, "cdk.out");
 
 const stage = "local";
 const account = "000000000000";
-const region = process.env.CDK_DEFAULT_REGION ?? process.env.AWS_DEFAULT_REGION ?? "us-east-1";
+const region = process.env.CDK_DEFAULT_REGION ?? process.env.AWS_DEFAULT_REGION ?? "ap-southeast-2";
 
 const defaultHostEndpoint = "http://127.0.0.1:4566";
 

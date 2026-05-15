@@ -35,11 +35,11 @@ Health:
 
 ## 3) Optional — put demo logs into LocalStack Logs
 
-PowerShell (adjust `$region` if you use something other than `us-east-1`):
+PowerShell (default region matches CDK / LocalStack scripts — override with `$env:CDK_DEFAULT_REGION` if needed):
 
 ```powershell
 $ep     = "http://127.0.0.1:4566"
-$region = "us-east-1"
+$region = "ap-southeast-2"
 $lg     = "/aws/lambda/warehouse-service-demo"
 $ls     = "demo-stream"
 $env:AWS_ACCESS_KEY_ID     = "test"
@@ -147,3 +147,6 @@ If you deploy with **`SPA_HOSTING=lambda`**, the output **`SpaLambdaFunctionUrl`
 | Publish SPA to S3 for EC2 sync | `$env:SPA_HOSTING = "ec2"` (+ see README **SPA hosting**) |
 
 `SPA_HOSTING` overrides CDK context **`spaHosting`** when the env var is set.
+
+
+DEPLOY to 

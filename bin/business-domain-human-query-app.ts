@@ -6,7 +6,8 @@ import { parseStage, stackEnvForStage } from "../lib/stage-config";
 
 const app = new cdk.App();
 const stage = parseStage(app.node.tryGetContext("stage") as string | undefined);
-const env = stackEnvForStage(stage);
+const contextDefaultRegion = app.node.tryGetContext("defaultRegion") as string | undefined;
+const env = stackEnvForStage(stage, contextDefaultRegion);
 
 new BusinessDomainHumanQueryStack(app, `BusinessDomainHumanQuery-${stage}`, {
   stage,

@@ -38,7 +38,7 @@ curl http://localhost:3000/api/health
 
 | Resource | UID / name | Notes |
 | -------- | ---------- | ----- |
-| CloudWatch datasource | `cloudwatch` (default) | `endpoint=http://host.docker.internal:4566`, region `us-east-1`, keys `test`/`test` |
+| CloudWatch datasource | `cloudwatch` (default) | `endpoint=http://host.docker.internal:4566`, region `ap-southeast-2`, keys `test`/`test` |
 | X-Ray datasource | `xray` | Same endpoint; plugin `grafana-x-ray-datasource` auto-installed via `GF_INSTALL_PLUGINS` |
 | Dashboard | `ai-query-playground` | Two panels (timeseries + logs) bound to `${dynamicQuery}`; targets use **`logGroupNames`** (not structured **`logGroups`**) for LocalStack **`StartQuery`**. Default time range `now-24h..now` |
 | Template variable | `dynamicQuery` (Textbox) | Set by Lambda via URL: `?var-dynamicQuery=<encoded query>` |

@@ -81,6 +81,7 @@ Deploy script order: **`npm run build`** → **`cdk bootstrap`** (skippable with
 npx cdk synth -c stage=dev
 npx cdk deploy --all -c stage=dev
 # or: npm run deploy:dev | deploy:test | deploy:prod
+# (each uses AWS CLI profile my-dev | my-test | my-prod — see ~/.aws/credentials)
 ```
 
 **`NodejsFunction`** publishes assets during deploy; do **not** use `BootstraplessSynthesizer` with bundled Lambdas.

@@ -19,7 +19,7 @@
           "id": "cw-logs-panel1",
           "datasource": { "type": "cloudwatch", "uid": "cloudwatch" },
           "queryMode": "Logs",
-          "region": "us-east-1",
+          "region": "ap-southeast-2",
           "expression": "${dynamicQuery}",
           "logGroupNames": ["/aws/lambda/warehouse-service-demo"],
           "statsGroups": []
@@ -43,7 +43,7 @@
           "id": "cw-logs-panel2",
           "datasource": { "type": "cloudwatch", "uid": "cloudwatch" },
           "queryMode": "Logs",
-          "region": "us-east-1",
+          "region": "ap-southeast-2",
           "expression": "${dynamicQuery}",
           "logGroupNames": ["/aws/lambda/warehouse-service-demo"],
           "statsGroups": []

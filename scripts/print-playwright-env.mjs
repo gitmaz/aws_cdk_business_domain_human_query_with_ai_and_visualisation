@@ -9,7 +9,7 @@ import { execFileSync } from "node:child_process";
  */
 
 const endpoint = process.env.AWS_ENDPOINT_URL ?? "http://127.0.0.1:4566";
-const region = process.env.AWS_DEFAULT_REGION ?? process.env.AWS_REGION ?? "us-east-1";
+const region = process.env.AWS_DEFAULT_REGION ?? process.env.AWS_REGION ?? "ap-southeast-2";
 const stack = process.env.PLAYWRIGHT_CFN_STACK ?? "BusinessDomainHumanQuery-local";
 
 const env = {

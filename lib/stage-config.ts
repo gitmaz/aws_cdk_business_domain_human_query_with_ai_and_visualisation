@@ -22,10 +22,24 @@ export function parseStage(raw: string | undefined): StageId {
 }
 
 /**
+ * Deploy region precedence: **`CDK_DEFAULT_REGION`** → **`AWS_DEFAULT_REGION`** →
+ * **`cdk.json` `context.defaultRegion`** → **`ap-southeast-2`**.
+ */
+export function resolveDeployRegion(contextDefaultRegion?: string): string {
+  const fromContext = contextDefaultRegion?.trim();
+  return (
+    process.env.CDK_DEFAULT_REGION?.trim() ||
+    process.env.AWS_DEFAULT_REGION?.trim() ||
+    fromContext ||
+    "ap-southeast-2"
+  );
+}
+
+/**
  * CDK **`env`** for the stack: LocalStack uses the conventional dummy account; other stages use caller env.
  */
-export function stackEnvForStage(stage: StageId): Environment {
-  const region = process.env.CDK_DEFAULT_REGION ?? process.env.AWS_DEFAULT_REGION ?? "us-east-1";
+export function stackEnvForStage(stage: StageId, contextDefaultRegion?: string): Environment {
+  const region = resolveDeployRegion(contextDefaultRegion);
   if (stage === "local") {
     return { account: "000000000000", region };
   }

@@ -77,7 +77,7 @@ POST /query/build (body = structuredIntent)  →  { builtQueries: { logsInsights
 **Stages** (same convention as **`aws_cdk_invoice_processing_and_approval`**):
 
 - **`local`** — CDK **`env.account`** is **`000000000000`**; deploy with **`npm run deploy:local`** (sets **`AWS_ENDPOINT_URL`**, dummy keys, path-style S3). See **[LOCALSTACK.md](./LOCALSTACK.md)**.
-- **`dev`**, **`test`**, **`prod`** — **`env.account`** = **`CDK_DEFAULT_ACCOUNT`** (unset for synth-only if your CDK setup allows), **`env.region`** from **`CDK_DEFAULT_REGION`** / **`AWS_DEFAULT_REGION`** / default **`us-east-1`**.
+- **`dev`**, **`test`**, **`prod`** — **`env.account`** = **`CDK_DEFAULT_ACCOUNT`** (unset for synth-only if your CDK setup allows), **`env.region`** from **`CDK_DEFAULT_REGION`** → **`AWS_DEFAULT_REGION`** → **`cdk.json` `context.defaultRegion`** → **`ap-southeast-2`** (see [`resolveDeployRegion`](./lib/stage-config.ts)).
 
 Default context stage when omitted is **`dev`** (`parseStage`).
 

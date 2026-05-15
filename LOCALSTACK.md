@@ -39,7 +39,7 @@ The script sets dummy credentials, **`CDK_DEFAULT_ACCOUNT=000000000000`**, **`AW
 
 **`AWS_PROFILE`:** the deploy script **drops** `AWS_PROFILE`, `AWS_SESSION_TOKEN`, and `AWS_SECURITY_TOKEN` by default so calls go to LocalStack with **`test`/`test`** keys. If you truly need a profile in the chain, set **`CDK_LOCALSTACK_KEEP_AWS_PROFILE=1`** (unusual for LocalStack).
 
-**`cdk deploy` fails with exit code 1:** run with **`DEPLOY_LOCAL_VERBOSE=1`** so CDK adds **`--verbose`**, then read the last CloudFormation / asset error in the log. Align **`CDK_DEFAULT_REGION`** / **`AWS_DEFAULT_REGION`** with the region where LocalStack created **`CDKToolkit`** (often **`us-east-1`**).
+**`cdk deploy` fails with exit code 1:** run with **`DEPLOY_LOCAL_VERBOSE=1`** so CDK adds **`--verbose`**, then read the last CloudFormation / asset error in the log. Align **`CDK_DEFAULT_REGION`** / **`AWS_DEFAULT_REGION`** with the region where LocalStack created **`CDKToolkit`** (often **`ap-southeast-2`**).
 
 ### X-Ray on LocalStack Community (no login)
 
@@ -74,7 +74,7 @@ npm run destroy:local
 | **`cdk deploy` exits 1** with no obvious line in the terminal | **`DEPLOY_LOCAL_VERBOSE=1 npm run deploy:local`** — CDK prints CloudFormation and asset steps. |
 | **`cdk bootstrap` OOM / very slow** on Windows | **`CDK_SKIP_BOOTSTRAP=1`** if **`CDKToolkit`** already exists for **`000000000000`** in **`CDK_DEFAULT_REGION`** (check with `aws cloudformation describe-stacks --stack-name CDKToolkit --endpoint-url …`). |
 | Calls hit **real AWS** instead of LocalStack | Open a shell **without** **`AWS_PROFILE`** / SSO session vars, or set **`CDK_LOCALSTACK_KEEP_AWS_PROFILE=1`** only if you intentionally use a profile **and** still point APIs at LocalStack. |
-| **Region mismatch** (bootstrap in `us-east-1`, deploy elsewhere) | Set **`CDK_DEFAULT_REGION`** and **`AWS_DEFAULT_REGION`** to the same value before **`npm run deploy:local`**. |
+| **Region mismatch** (bootstrap in `ap-southeast-2`, deploy elsewhere) | Set **`CDK_DEFAULT_REGION`** and **`AWS_DEFAULT_REGION`** to the same value before **`npm run deploy:local`**. |
 | **Stale / corrupt `cdk.out`** after a failed deploy | Delete the **`cdk.out`** folder in the repo root, then **`npm run deploy:local`** again. |
 | **Grafana Explore / dashboard:** **`StartQuery` … `'NoneType' object is not iterable`** (HTTP 500 from LocalStack) | **Cause:** LocalStack’s Moto **`StartQuery`** only reads **`logGroupName`** / **`logGroupNames`**. **Grafana 11.x** often sends **`logGroupIdentifiers`** for Logs Insights; Moto ignores them → **`logGroupNames`** is null → crash ([LocalStack #12185](https://github.com/localstack/localstack/issues/12185)). **Fix:** this repo’s **`docker-compose.yml`** pins **`grafana/grafana-oss:12.4.0`**, where non–monitoring-account CloudWatch datasources use **`logGroupNames`** again ([Grafana #113137](https://github.com/grafana/grafana/pull/113137)). Run **`docker compose pull`** in **`docker/grafana/`**, then **`npm run grafana:local:down:purge`** and **`npm run grafana:local:up`**. The **`ai-query-playground`** JSON still sets **`logGroupNames`** for clarity. In **Explore**, pick the log group before **Run query**. |
 
@@ -86,7 +86,7 @@ npm run destroy:local
 | -------- | ---- |
 | **`AWS_ENDPOINT_URL`** | LocalStack edge URL (default `http://127.0.0.1:4566`) |
 | **`AWS_ACCESS_KEY_ID`** / **`AWS_SECRET_ACCESS_KEY`** | Defaults **`test`** / **`test`** in deploy/destroy scripts |
-| **`CDK_DEFAULT_REGION`** | Region for bootstrap/deploy/destroy (default **`us-east-1`**) |
+| **`CDK_DEFAULT_REGION`** | Region for bootstrap/deploy/destroy (default **`ap-southeast-2`**) |
 | **`AWS_S3_FORCE_PATH_STYLE`** | Set to **`1`** by deploy script for S3 compatibility |
 | **`DEPLOY_LOCAL_VERBOSE`** | Set to **`1`** to add **`--verbose`** to CDK commands in **`deploy:local`** and **`destroy:local`**. |
 | **`CDK_SKIP_BOOTSTRAP`** | Set to **`1`** in **`deploy:local`** only to skip **`cdk bootstrap`** when **`CDKToolkit`** is already present. |
@@ -112,7 +112,7 @@ npm run grafana:local:down:purge         # stop + drop the persisted Grafana vol
 
 Provisioned automatically (see `docker/grafana/`):
 
-- **CloudWatch (LocalStack)** datasource — UID **`cloudwatch`** — endpoint `http://host.docker.internal:4566`, region `us-east-1`.
+- **CloudWatch (LocalStack)** datasource — UID **`cloudwatch`** — endpoint `http://host.docker.internal:4566`, region `ap-southeast-2`.
 - **X-Ray (LocalStack)** datasource — UID **`xray`** — same endpoint (X-Ray plugin auto-installed via `GF_INSTALL_PLUGINS=grafana-x-ray-datasource`). **May not work** on plain **Community** if LocalStack rejects **`xray`** APIs (see [§ 2 — X-Ray on LocalStack Community](#x-ray-on-localstack-community-no-login)); use **CloudWatch** for smoke tests until X-Ray is enabled on your LocalStack edition.
 - Dashboard **`ai-query-playground`** with a **`dynamicQuery`** Textbox template variable; panels' CloudWatch Logs Insights expression is **`${dynamicQuery}`** so the variable-driven URL from `/visualize` Just Works.
 
@@ -155,7 +155,7 @@ The bundled `grafana.ini` enables **anonymous Admin** (`GF_AUTH_ANONYMOUS_ENABLE
 
 1. LocalStack is up — **`curl http://127.0.0.1:4566/_localstack/health`** (see [§ 1](#1-install-and-start-localstack)).
 2. **`npm run grafana:local:up`** — Grafana at **http://localhost:3000** (anonymous Admin).
-3. Use region **`us-east-1`** for CLI and queries (matches [`docker/grafana/provisioning/datasources/datasources.yaml`](./docker/grafana/provisioning/datasources/datasources.yaml)).
+3. Use region **`ap-southeast-2`** for CLI and queries (matches [`docker/grafana/provisioning/datasources/datasources.yaml`](./docker/grafana/provisioning/datasources/datasources.yaml)).
 
 #### 1) Put sample events into LocalStack CloudWatch Logs
 
@@ -165,7 +165,7 @@ Use the same demo log group name as **`cdk.json`** → **`/aws/lambda/warehouse-
 
 ```powershell
 $ep = "http://127.0.0.1:4566"
-$region = "us-east-1"
+$region = "ap-southeast-2"
 $lg = "/aws/lambda/warehouse-service-demo"
 $ls = "demo-stream"
 $env:AWS_ACCESS_KEY_ID = "test"
@@ -186,7 +186,7 @@ If **`put-log-events`** fails on a **second** write to the same stream, pass **`
 ```bash
 export AWS_ACCESS_KEY_ID=test AWS_SECRET_ACCESS_KEY=test
 EP=http://127.0.0.1:4566
-R=us-east-1
+R=ap-southeast-2
 LG=/aws/lambda/warehouse-service-demo
 LS=demo-stream
 
@@ -202,7 +202,7 @@ aws logs put-log-events --log-group-name "$LG" --log-stream-name "$LS" \
 
 1. Open **http://localhost:3000** → **Explore**.
 2. Data source: **CloudWatch (LocalStack)**.
-3. Query mode: **CloudWatch Logs** · Region: **`us-east-1`**.
+3. Query mode: **CloudWatch Logs** · Region: **`ap-southeast-2`**.
 4. Log groups: select **`/aws/lambda/warehouse-service-demo`** (or type it if shown).
 5. Run:
 
@@ -267,7 +267,7 @@ Open **`grafana.dashboardUrl`** from the JSON response in a browser (variable-dr
 
 | Symptom | What to check |
 | ------- | ------------- |
-| **No rows in Grafana** | Log group name matches **`SOURCE '...'`**; region **`us-east-1`**; Grafana time range includes “now”; LocalStack actually received **`put-log-events`** (re-run CLI, check for errors). |
+| **No rows in Grafana** | Log group name matches **`SOURCE '...'`**; region **`ap-southeast-2`**; Grafana time range includes “now”; LocalStack actually received **`put-log-events`** (re-run CLI, check for errors). |
 | **Grafana cannot reach LocalStack** | LocalStack on **host** at **`127.0.0.1:4566`**; Grafana container uses **`host.docker.internal:4566`** (Docker Desktop). On **Linux**, see [Networking — Lambda ↔ Grafana](#networking--lambda--grafana) (shared **`human-query-net`** or **`host-gateway`**). |
 | **Insights errors in Grafana** | LocalStack Community parity is not identical to AWS — try a minimal query first: **`fields @timestamp, @message \| limit 5`**. Upgrade LocalStack or check [LocalStack CloudWatch docs](https://docs.localstack.cloud/aws/services/cloudwatch/) for your version. |
 | **`/visualize` returns a URL but browser shows empty panels** | Default textbox query has no **`SOURCE`** — use the **`SOURCE '...'`** query above or select log groups in the panel and save. |

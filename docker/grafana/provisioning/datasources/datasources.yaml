@@ -18,7 +18,7 @@ datasources:
     editable: true
     jsonData:
       authType: keys
-      defaultRegion: us-east-1
+      defaultRegion: ap-southeast-2
       # LocalStack edge endpoint reachable from inside the Grafana container.
       endpoint: http://host.docker.internal:4566
       customMetricsNamespaces: ""
@@ -33,7 +33,7 @@ datasources:
     editable: true
     jsonData:
       authType: keys
-      defaultRegion: us-east-1
+      defaultRegion: ap-southeast-2
       endpoint: http://host.docker.internal:4566
     secureJsonData:
       accessKey: test
