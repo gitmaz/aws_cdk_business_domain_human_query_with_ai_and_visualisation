@@ -38,7 +38,11 @@
     "test:e2e:install": "npx playwright install chromium",
     "playwright:print-env": "node scripts/print-playwright-env.mjs",
     "spa:dev": "npm --prefix spa run dev",
-    "spa:build": "npm --prefix spa run build",
+    "spa:build": "npm --prefix spa run build:dev",
+    "spa:build:local": "npm --prefix spa run build:local",
+    "spa:build:dev": "npm --prefix spa run build:dev",
+    "spa:build:test": "npm --prefix spa run build:test",
+    "spa:build:prod": "npm --prefix spa run build:prod",
     "spa:preview": "npm --prefix spa run preview"
   },
   "dependencies": {

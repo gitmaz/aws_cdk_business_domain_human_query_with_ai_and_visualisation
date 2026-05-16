@@ -97,44 +97,34 @@ curl.exe -sS -X POST "$api/intent" -H "Content-Type: application/json" -d "{\"me
 
 ---
 
-## 5) React SPA (Vite dev server)
+## 5) React SPA — local dev (FE + LocalStack BE)
 
-1. In **`spa/`**, create **`spa/.env.local`** (gitignored) with at least:
-
-```env
-VITE_APP_STAGE=local
-VITE_API_BASE_URL=https://...paste HttpApiUrl from print-env...
-```
-
-2. From the **CDK project root**:
-
-```powershell
-npm run spa:dev
-```
-
-
-Note:
-npm run spa:dev (local dev)
-VITE_API_BASE_URL comes from .env.local (put it there using npm run playwright:print-env after deploy) when Vite starts.
-You do not need npm run spa:build when the API base URL changes.
-Do this: put the new HttpApiUrl from the new deploy into spa/.env.local, then stop and run npm run spa:dev again (Vite only reads those vars at startup).
-npm run spa:build (static spa/dist, preview, or Lambda/CDK bundle)
-VITE_* values are inlined at build time into the JS bundle.
-If a new stack deploy gives a different HttpApiUrl, the old build still has the old URL until you rebuild.
-Do this: update spa/.env.local (or whatever env you use for the build), run npm run spa:build, then use the new dist (and if you host that bundle on Lambda via CDK, redeploy so the new asset is published).
-Summary: Dev = no rebuild, restart dev server + update .env.local. Static/production build = yes, rebuild when the API base URL changes.
-
-
-
-3. Open **http://localhost:3005/** (port is set in `spa/vite.config.ts`).
+1. Copy **`spa/.env.example`** → **`spa/.env.local`** (gitignored; share URLs with team outside git) — LocalStack **`HttpApiUrl`** from **`playwright:print-env`** after **`deploy:local`**.
+2. **`npm run spa:dev`** → **http://localhost:3005/** (reads **`.env.local`** only; restart Vite after URL changes).
 
 ---
 
-## 6) Optional — host built SPA on Lambda (same stack)
+## 6) React SPA — build for AWS dev (Lambda static host)
 
-If you deploy with **`SPA_HOSTING=lambda`**, the output **`SpaLambdaFunctionUrl`** serves **`spa/dist`**. The bundle must include the right API URL: set **`VITE_API_BASE_URL`** in **`.env.local`**, run **`npm run spa:build`**, then redeploy (or use **`SPA_USE_PREBUILT_DIST=1`** after `spa:build` to skip `npm ci` inside the asset container). For day-to-day UI work, **`npm run spa:dev`** is simpler.
+1. Copy **`spa/.env.example`** → **`spa/.env.dev`** (gitignored) — **`VITE_API_BASE_URL`** = dev stack **`HttpApiUrl`** (CloudFormation output; not the SPA function URL).
+2. Build and deploy UI:
 
-**Synth/deploy note:** default **`SPA_HOSTING=lambda`** pulls the SAM Node 20 Docker image for bundling (first pull can take many minutes). Use **`SPA_HOSTING=none`** when you only need the API stack, or **`SPA_USE_PREBUILT_DIST=1`** after **`npm run spa:build`** to reuse **`spa/dist`** without reinstalling deps in the bundle step.
+```powershell
+npm run spa:build:dev
+$env:SPA_HOSTING = "lambda"
+$env:SPA_USE_PREBUILT_DIST = "1"
+npm run deploy:dev -- --require-approval never
+```
+
+3. Open stack output **`SpaLambdaFunctionUrl`** in the browser. API calls go to **`HttpApiUrl`**.
+
+| Build script | Env file |
+|--------------|----------|
+| **`npm run spa:build:dev`** | **`.env.dev`** |
+| **`npm run spa:build:test`** | **`.env.test`** |
+| **`npm run spa:build:prod`** | **`.env.prod`** |
+
+**Synth/deploy note:** **`SPA_HOSTING=lambda`** uses Docker for the SPA asset bundle (first pull can be slow). Use **`SPA_USE_PREBUILT_DIST=1`** after **`spa:build:<stage>`** to copy **`spa/dist`** only.
 
 ---
 
@@ -147,6 +137,3 @@ If you deploy with **`SPA_HOSTING=lambda`**, the output **`SpaLambdaFunctionUrl`
 | Publish SPA to S3 for EC2 sync | `$env:SPA_HOSTING = "ec2"` (+ see README **SPA hosting**) |
 
 `SPA_HOSTING` overrides CDK context **`spaHosting`** when the env var is set.
-
-
-DEPLOY to 

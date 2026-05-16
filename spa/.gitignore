@@ -10,7 +10,11 @@ lerna-debug.log*
 node_modules
 dist
 dist-ssr
-*.local
+
+# Env with URLs/secrets — share with team out of band; only .env.example is committed
+.env
+.env.*
+!.env.example
 
 # Editor directories and files
 .vscode/*
