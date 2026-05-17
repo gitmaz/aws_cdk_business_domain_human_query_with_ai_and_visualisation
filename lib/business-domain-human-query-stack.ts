@@ -15,6 +15,7 @@ import { useDockerLambdaBundling } from "./bundling-flags";
 import { GrafanaWorkspaceConstruct, type GrafanaContext } from "./grafana-workspace-construct";
 import { resolveSpaHosting } from "./resolve-spa-hosting";
 import { SpaHostingConstruct } from "./spa-hosting-construct";
+import { SwaggerDocsConstruct } from "./swagger-docs-construct";
 import type { StageId } from "./stage-config";
 
 export interface BusinessDomainHumanQueryStackProps extends cdk.StackProps {
@@ -264,7 +265,7 @@ export class BusinessDomainHumanQueryStack extends cdk.Stack {
         },
         defaultCorsPreflightOptions: {
           allowOrigins: apigateway.Cors.ALL_ORIGINS,
-          allowMethods: ["POST", "OPTIONS"],
+          allowMethods: ["GET", "POST", "OPTIONS"],
           allowHeaders: ["Content-Type", "Authorization"],
         },
         cloudWatchRole: false,
@@ -279,17 +280,29 @@ export class BusinessDomainHumanQueryStack extends cdk.Stack {
       query.addResource("build").addMethod("POST", queryIntegration);
       restApi.root.addResource("visualize").addMethod("POST", visualizeIntegration);
 
+      const apiBase = restApi.url.replace(/\/+$/, "");
+      new SwaggerDocsConstruct(this, "SwaggerDocs", {
+        stage,
+        apiPublicBaseUrl: apiBase,
+        lambdaDefaults,
+        restApi,
+      });
+
       new CfnOutput(this, "HttpApiUrl", {
         value: restApi.url,
         description:
-          "Base URL (REST API v1 on LocalStack) for POST /intent, POST /query/build, POST /visualize",
+          "Base URL (REST API v1 on LocalStack) for POST /intent, POST /query/build, POST /visualize; GET /docs",
       });
     } else {
       const httpApi = new apigwv2.HttpApi(this, "HumanQueryHttpApi", {
         apiName: `human-query-intent-${stage}`,
         corsPreflight: {
           allowHeaders: ["content-type", "authorization"],
-          allowMethods: [apigwv2.CorsHttpMethod.POST, apigwv2.CorsHttpMethod.OPTIONS],
+          allowMethods: [
+            apigwv2.CorsHttpMethod.GET,
+            apigwv2.CorsHttpMethod.POST,
+            apigwv2.CorsHttpMethod.OPTIONS,
+          ],
           allowOrigins: ["*"],
         },
       });
@@ -312,9 +325,18 @@ export class BusinessDomainHumanQueryStack extends cdk.Stack {
         integration: new apigwIntegrations.HttpLambdaIntegration("GrafanaVisualizeIntegration", visualizeFn),
       });
 
+      const apiBase = (httpApi.apiEndpoint ?? "").replace(/\/+$/, "");
+      new SwaggerDocsConstruct(this, "SwaggerDocs", {
+        stage,
+        apiPublicBaseUrl: apiBase,
+        lambdaDefaults,
+        httpApi,
+      });
+
       new CfnOutput(this, "HttpApiUrl", {
         value: httpApi.apiEndpoint,
-        description: "Base URL (HTTP API v2) for POST /intent, POST /query/build, and POST /visualize",
+        description:
+          "Base URL (HTTP API v2) for POST /intent, POST /query/build, POST /visualize; GET /docs",
       });
     }
     new CfnOutput(this, "Stage", { value: stage });
@@ -339,9 +361,9 @@ export class BusinessDomainHumanQueryStack extends cdk.Stack {
     new CfnOutput(this, "SpaHostingMode", {
       value: spaHostingMode,
       description:
-        "From SPA_HOSTING / -c spaHosting: lambda (Function URL) | ec2 (S3 for EC2 sync) | none (skip SPA infra)",
+        "From SPA_HOSTING / -c spaHosting: lambda (Function URL) | ec2 (S3 for EC2 sync) | skip (no SPA in stack)",
     });
-    if (spaHostingMode !== "none") {
+    if (spaHostingMode !== "skip") {
       new SpaHostingConstruct(this, "SpaHosting", { stage, mode: spaHostingMode });
     }
   }

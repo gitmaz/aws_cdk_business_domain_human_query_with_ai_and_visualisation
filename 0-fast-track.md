@@ -76,7 +76,7 @@ fields @timestamp, @message
 cd maz\aws\serverless\aws_cdk_business_domain_human_query_with_ai_and_visualisation
 
 # Fast synth (no SPA Lambda/S3 asset bundle):
-$env:SPA_HOSTING = "none"
+$env:SPA_HOSTING = "skip"
 npm run synth:local
 
 # Deploy stack to LocalStack:
@@ -106,17 +106,13 @@ curl.exe -sS -X POST "$api/intent" -H "Content-Type: application/json" -d "{\"me
 
 ## 6) React SPA — build for AWS dev (Lambda static host)
 
-1. Copy **`spa/.env.example`** → **`spa/.env.dev`** (gitignored) — **`VITE_API_BASE_URL`** = dev stack **`HttpApiUrl`** (CloudFormation output; not the SPA function URL).
-2. Build and deploy UI:
+When **`SPA_HOSTING=lambda`** (default), **`spa/dist` must exist** before synth/deploy (CDK copies it locally; no Docker). First time: deploy API only, set env, build SPA, redeploy.
 
-```powershell
-npm run spa:build:dev
-$env:SPA_HOSTING = "lambda"
-$env:SPA_USE_PREBUILT_DIST = "1"
-npm run deploy:dev -- --require-approval never
-```
-
-3. Open stack output **`SpaLambdaFunctionUrl`** in the browser. API calls go to **`HttpApiUrl`**.
+1. **`$env:SPA_HOSTING = "skip"`** → **`npm run deploy:dev`** → copy **`HttpApiUrl`** (and **`SwaggerDocsUrl`**).
+2. Copy **`spa/.env.example`** → **`spa/.env.dev`** — **`VITE_API_BASE_URL`** = **`HttpApiUrl`** (not the SPA function URL).
+3. **`npm run spa:build:dev`**
+4. **`$env:SPA_HOSTING = "lambda"`** → **`npm run deploy:dev -- --require-approval never`**
+5. Open **`SpaLambdaFunctionUrl`**. API calls use **`HttpApiUrl`**.
 
 | Build script | Env file |
 |--------------|----------|
@@ -124,15 +120,13 @@ npm run deploy:dev -- --require-approval never
 | **`npm run spa:build:test`** | **`.env.test`** |
 | **`npm run spa:build:prod`** | **`.env.prod`** |
 
-**Synth/deploy note:** **`SPA_HOSTING=lambda`** uses Docker for the SPA asset bundle (first pull can be slow). Use **`SPA_USE_PREBUILT_DIST=1`** after **`spa:build:<stage>`** to copy **`spa/dist`** only.
-
 ---
 
 ## Env / context reference
 
 | Goal | Set |
 |------|-----|
-| Skip SPA infra in CDK | `$env:SPA_HOSTING = "none"` or `-c spaHosting=none` |
+| Skip SPA infra in CDK | `$env:SPA_HOSTING = "skip"` or `-c spaHosting=skip` |
 | Publish SPA to Lambda URL | `$env:SPA_HOSTING = "lambda"` (default) |
 | Publish SPA to S3 for EC2 sync | `$env:SPA_HOSTING = "ec2"` (+ see README **SPA hosting**) |
 

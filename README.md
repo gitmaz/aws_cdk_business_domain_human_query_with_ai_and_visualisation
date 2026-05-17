@@ -94,27 +94,25 @@ The Vite app under **`spa/`** can be published by the same stack. Choose **befor
 
 | Mechanism | How to select |
 | --------- | ------------- |
-| **Environment** | **`SPA_HOSTING`** = `lambda` (default) \| `ec2` \| `none` |
-| **CDK context** | **`-c spaHosting=lambda`** (or `ec2`, `none`) — used only if **`SPA_HOSTING`** is unset |
+| **Environment** | **`SPA_HOSTING`** = `lambda` (default) \| `ec2` \| `skip` |
+| **CDK context** | **`-c spaHosting=lambda`** (or `ec2`, `skip`) — used only if **`SPA_HOSTING`** is unset |
 
 ### `lambda` (default)
 
 - Adds a **Lambda** plus a **function URL** that serves the built **`spa/dist`** (SPA fallback to `index.html`).
 - CloudFormation output: **`SpaLambdaFunctionUrl`**. Point **`VITE_API_BASE_URL`** at **`HttpApiUrl`** when you build the SPA for that environment.
-- **Bundling** runs **`npm ci`** + **`npm run build`** inside the CDK asset container (needs **Docker** on the machine running synth/deploy, unless you pre-build — see below).
+- **Bundling** copies prebuilt **`spa/dist`** on the host (run **`npm run spa:build:<stage>`** before synth/deploy).
 
 ### `ec2`
 
 - Creates an **S3 bucket** (unless **`SPA_EC2_ARTIFACT_BUCKET`** names an existing bucket), runs **`BucketDeployment`** with prefix **`SPA_EC2_KEY_PREFIX`** (default **`spa/<stage>`**), and outputs an **`aws s3 sync …`** example for copying files onto an **existing EC2** web root.
 - If **`SPA_EC2_INSTANCE_ROLE_ARN`** is set (EC2 instance-profile role), that role is granted **`s3:GetObject`** on the artifact bucket. For an **imported** bucket, ensure the deploy role and **`BucketDeployment`** principal can still write objects.
 
-### `none`
+### `skip`
 
 - Skips SPA infrastructure (faster **`cdk synth`** / CI when you do not need the static host).
 
-### `SPA_USE_PREBUILT_DIST`
-
-Set to **`1`** / **`true`** to skip **`npm ci`** in the CDK bundling container and copy only existing **`spa/dist/**`**. Run **`npm run spa:build`** first on the host.
+When **`SPA_HOSTING`** is **`lambda`** or **`ec2`**, run **`npm run spa:build:<stage>`** first so **`spa/dist`** exists; CDK copies it locally (no Docker).
 
 ## API
 

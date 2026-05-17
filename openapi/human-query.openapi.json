@@ -1,0 +1,289 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "Business domain human query API",
+    "description": "NL → structured intent → validated CloudWatch Logs Insights / X-Ray queries, optional Grafana visualization.",
+    "version": "1.0.0"
+  },
+  "servers": [{ "url": "/" }],
+  "tags": [
+    { "name": "intent", "description": "Natural language / structured intent extraction" },
+    { "name": "query", "description": "Domain query builders" },
+    { "name": "visualize", "description": "Grafana dashboard links" }
+  ],
+  "paths": {
+    "/intent": {
+      "post": {
+        "tags": ["intent"],
+        "summary": "Extract structured query intent",
+        "description": "Accepts natural language or passthrough `structuredIntent`. Returns `structuredIntent` + `mode` (ai_mock, openai, bedrock, passthrough).",
+        "operationId": "postIntent",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/IntentRequest" },
+              "examples": {
+                "naturalLanguage": {
+                  "summary": "Natural language (AI_MOCK / OpenAI / Bedrock)",
+                  "value": {
+                    "message": "Show warehouse inventory delays at SYD-1 in the last 24 hours"
+                  }
+                },
+                "passthrough": {
+                  "summary": "Passthrough structured intent",
+                  "value": {
+                    "structuredIntent": {
+                      "domain": "warehouse",
+                      "intent": "inventory_delay_analysis",
+                      "entityFilters": { "warehouseId": "SYD-1" },
+                      "timeRange": { "value": 24, "unit": "hour" },
+                      "visualization": "timeseries"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Structured intent",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/IntentResponse" }
+              }
+            }
+          },
+          "400": { "$ref": "#/components/responses/Error" },
+          "500": { "$ref": "#/components/responses/Error" },
+          "502": { "$ref": "#/components/responses/Error" },
+          "503": { "$ref": "#/components/responses/Error" }
+        }
+      }
+    },
+    "/query/build": {
+      "post": {
+        "tags": ["query"],
+        "summary": "Build Logs Insights and X-Ray queries",
+        "description": "Validates `StructuredQueryIntent` against the domain registry and returns trusted query strings (never raw client-supplied Insights SQL).",
+        "operationId": "postQueryBuild",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/StructuredQueryIntent" },
+              "example": {
+                "domain": "warehouse",
+                "intent": "inventory_delay_analysis",
+                "entityFilters": { "warehouseId": "SYD-1" },
+                "timeRange": { "value": 24, "unit": "hour" },
+                "visualization": "timeseries"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Built queries",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/QueryBuildResponse" }
+              }
+            }
+          },
+          "400": { "$ref": "#/components/responses/Error" },
+          "500": { "$ref": "#/components/responses/Error" }
+        }
+      }
+    },
+    "/visualize": {
+      "post": {
+        "tags": ["visualize"],
+        "summary": "Build Grafana visualization URLs",
+        "description": "Turns a Logs Insights query (or structured intent) into Grafana dashboard / panel URLs. Default mode is variable-driven (no dashboard mutation).",
+        "operationId": "postVisualize",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/VisualizeRequest" },
+              "examples": {
+                "fromIntent": {
+                  "summary": "From structured intent",
+                  "value": {
+                    "structuredIntent": {
+                      "domain": "warehouse",
+                      "intent": "inventory_delay_analysis",
+                      "entityFilters": { "warehouseId": "SYD-1" },
+                      "timeRange": { "value": 24, "unit": "hour" }
+                    },
+                    "dashboardUid": "human-query-demo",
+                    "panelId": 2,
+                    "mode": "variable"
+                  }
+                },
+                "fromQuery": {
+                  "summary": "From Logs Insights query string",
+                  "value": {
+                    "query": "fields @timestamp, @message | filter warehouseId = \"SYD-1\" | sort @timestamp desc | limit 20",
+                    "dashboardUid": "human-query-demo",
+                    "mode": "variable"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Grafana URLs and metadata",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/VisualizeResponse" }
+              }
+            }
+          },
+          "400": { "$ref": "#/components/responses/Error" },
+          "500": { "$ref": "#/components/responses/Error" },
+          "502": { "$ref": "#/components/responses/Error" }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "IntentRequest": {
+        "type": "object",
+        "properties": {
+          "message": { "type": "string", "description": "Natural language question" },
+          "naturalLanguage": { "type": "string" },
+          "question": { "type": "string" },
+          "structuredIntent": { "$ref": "#/components/schemas/StructuredQueryIntent" }
+        }
+      },
+      "StructuredQueryIntent": {
+        "type": "object",
+        "required": ["domain", "intent"],
+        "properties": {
+          "domain": {
+            "type": "string",
+            "enum": ["warehouse", "manufacturing", "finance", "ordering"]
+          },
+          "intent": { "type": "string" },
+          "entityFilters": {
+            "type": "object",
+            "additionalProperties": {
+              "oneOf": [{ "type": "string" }, { "type": "number" }, { "type": "boolean" }]
+            }
+          },
+          "timeRange": {
+            "type": "object",
+            "properties": {
+              "value": { "type": "number" },
+              "unit": { "type": "string", "enum": ["hour", "day", "week"] }
+            }
+          },
+          "visualization": { "type": "string", "enum": ["timeseries", "table", "stat"] },
+          "sourceQuestion": { "type": "string" }
+        }
+      },
+      "IntentResponse": {
+        "type": "object",
+        "properties": {
+          "structuredIntent": { "$ref": "#/components/schemas/StructuredQueryIntent" },
+          "mode": { "type": "string" },
+          "error": { "type": "string" },
+          "aiMode": { "type": "string" }
+        }
+      },
+      "BuiltQueries": {
+        "type": "object",
+        "properties": {
+          "logsInsightsQuery": { "type": "string" },
+          "xrayFilterExpression": { "type": "string" },
+          "logGroupNames": { "type": "array", "items": { "type": "string" } },
+          "notes": { "type": "array", "items": { "type": "string" } }
+        }
+      },
+      "QueryBuildResponse": {
+        "type": "object",
+        "properties": {
+          "intent": { "$ref": "#/components/schemas/StructuredQueryIntent" },
+          "builtQueries": { "$ref": "#/components/schemas/BuiltQueries" },
+          "hint": { "type": "string" },
+          "error": { "type": "string" }
+        }
+      },
+      "VisualizeRequest": {
+        "type": "object",
+        "properties": {
+          "query": { "type": "string", "description": "CloudWatch Logs Insights query" },
+          "structuredIntent": { "$ref": "#/components/schemas/StructuredQueryIntent" },
+          "dashboardUid": { "type": "string" },
+          "panelId": { "type": "integer" },
+          "variableName": { "type": "string", "default": "dynamicQuery" },
+          "variables": {
+            "type": "object",
+            "additionalProperties": {
+              "oneOf": [{ "type": "string" }, { "type": "number" }, { "type": "boolean" }]
+            }
+          },
+          "timeRange": {
+            "type": "object",
+            "properties": {
+              "value": { "type": "number" },
+              "unit": { "type": "string", "enum": ["hour", "day", "week"] }
+            }
+          },
+          "from": { "type": "string" },
+          "to": { "type": "string" },
+          "refresh": { "type": "string" },
+          "mode": { "type": "string", "enum": ["variable", "panel_patch"], "default": "variable" },
+          "render": { "type": "boolean" },
+          "renderWidth": { "type": "integer" },
+          "renderHeight": { "type": "integer" },
+          "renderType": { "type": "string", "enum": ["png", "csv", "xlsx"] },
+          "slug": { "type": "string" },
+          "region": { "type": "string" }
+        }
+      },
+      "VisualizeResponse": {
+        "type": "object",
+        "properties": {
+          "grafana": {
+            "type": "object",
+            "properties": {
+              "dashboardUrl": { "type": "string" },
+              "panelEmbedUrl": { "type": "string" },
+              "dashboardUid": { "type": "string" },
+              "variableName": { "type": "string" },
+              "renderUrl": { "type": "string" }
+            }
+          },
+          "query": { "type": "string" },
+          "builtQueries": { "$ref": "#/components/schemas/BuiltQueries" },
+          "mode": { "type": "string" },
+          "error": { "type": "string" }
+        }
+      },
+      "ErrorBody": {
+        "type": "object",
+        "properties": {
+          "error": { "type": "string" },
+          "aiMode": { "type": "string" }
+        }
+      }
+    },
+    "responses": {
+      "Error": {
+        "description": "Error",
+        "content": {
+          "application/json": {
+            "schema": { "$ref": "#/components/schemas/ErrorBody" }
+          }
+        }
+      }
+    }
+  }
+}
