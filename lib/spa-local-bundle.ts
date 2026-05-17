@@ -33,7 +33,7 @@ export function spaPrebuiltLocalBundling(
       const distDir = path.join(root, "spa", "dist");
       if (!fs.existsSync(distDir)) {
         throw new Error(
-          `spa/dist is missing. Run ${buildCmd} (or set SPA_HOSTING=skip to omit SPA assets).`,
+          `spa/dist is missing. Run ${buildCmd} (or set SPA_HOSTING=none to omit SPA assets).`,
         );
       }
       try {

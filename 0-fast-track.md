@@ -76,7 +76,7 @@ fields @timestamp, @message
 cd maz\aws\serverless\aws_cdk_business_domain_human_query_with_ai_and_visualisation
 
 # Fast synth (no SPA Lambda/S3 asset bundle):
-$env:SPA_HOSTING = "skip"
+$env:SPA_HOSTING = "none"
 npm run synth:local
 
 # Deploy stack to LocalStack:
@@ -108,7 +108,7 @@ curl.exe -sS -X POST "$api/intent" -H "Content-Type: application/json" -d "{\"me
 
 When **`SPA_HOSTING=lambda`** (default), **`spa/dist` must exist** before synth/deploy (CDK copies it locally; no Docker). First time: deploy API only, set env, build SPA, redeploy.
 
-1. **`$env:SPA_HOSTING = "skip"`** → **`npm run deploy:dev`** → copy **`HttpApiUrl`** (and **`SwaggerDocsUrl`**).
+1. **`$env:SPA_HOSTING = "none"`** → **`npm run deploy:dev`** → copy **`HttpApiUrl`** (and **`SwaggerDocsUrl`**).
 2. Copy **`spa/.env.example`** → **`spa/.env.dev`** — **`VITE_API_BASE_URL`** = **`HttpApiUrl`** (not the SPA function URL).
 3. **`npm run spa:build:dev`**
 4. **`$env:SPA_HOSTING = "lambda"`** → **`npm run deploy:dev -- --require-approval never`**
@@ -126,8 +126,25 @@ When **`SPA_HOSTING=lambda`** (default), **`spa/dist` must exist** before synth/
 
 | Goal | Set |
 |------|-----|
-| Skip SPA infra in CDK | `$env:SPA_HOSTING = "skip"` or `-c spaHosting=skip` |
+| Omit SPA infra in CDK | `$env:SPA_HOSTING = "none"` or `-c spaHosting=none` |
 | Publish SPA to Lambda URL | `$env:SPA_HOSTING = "lambda"` (default) |
 | Publish SPA to S3 for EC2 sync | `$env:SPA_HOSTING = "ec2"` (+ see README **SPA hosting**) |
 
 `SPA_HOSTING` overrides CDK context **`spaHosting`** when the env var is set.
+
+@@extract swagger ui url
+aws cloudformation describe-stacks --stack-name BusinessDomainHumanQuery-dev `
+  --profile my-dev --region ap-southeast-2 `
+  --query "Stacks[0].Outputs[?OutputKey=='SwaggerDocsUrl' || OutputKey=='SwaggerDocsLambdaUrl'].[OutputKey,OutputValue]" `
+  --output table
+
+@currenly result is:
+
+api url:
+https://0bkybqvnyc.execute-api.ap-southeast-2.amazonaws.com/docs
+
+open specs:
+ https://0bkybqvnyc.execute-api.ap-southeast-2.amazonaws.com/openapi.json
+
+lambda url:
+https://d4ylggygidffujmf3y5bkhjcsq0ozhkg.lambda-url.ap-southeast-2.on.aws/
