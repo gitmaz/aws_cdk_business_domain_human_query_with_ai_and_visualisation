@@ -86,7 +86,7 @@ npx cdk deploy --all -c stage=dev
 
 **`NodejsFunction`** publishes assets during deploy; do **not** use `BootstraplessSynthesizer` with bundled Lambdas.
 
-Outputs: **`HttpApiUrl`**, **`Stage`**, **`SpaHostingMode`**, and (when hosting is enabled) **`SpaLambdaFunctionUrl`** and/or **EC2 artifact outputs** — see **SPA hosting** below.
+Outputs: **`HttpApiUrl`**, **`Stage`**, **`SpaHostingMode`**, and (when hosting is enabled) **`SpaLambdaFunctionUrl`**, **`SpaCloudFrontUrl`**, and/or **EC2 artifact outputs** — see **SPA hosting** below.
 
 ## SPA hosting (CDK)
 
@@ -94,14 +94,20 @@ The Vite app under **`spa/`** can be published by the same stack. Choose **befor
 
 | Mechanism | How to select |
 | --------- | ------------- |
-| **Environment** | **`SPA_HOSTING`** = `lambda` (default) \| `ec2` \| `none` |
-| **CDK context** | **`-c spaHosting=lambda`** (or `ec2`, `none`) — used only if **`SPA_HOSTING`** is unset |
+| **Environment** | **`SPA_HOSTING`** = `lambda` (default) \| `cloudfront` \| `ec2` \| `none` |
+| **CDK context** | **`-c spaHosting=lambda`** (or `cloudfront`, `ec2`, `none`) — used only if **`SPA_HOSTING`** is unset |
 
 ### `lambda` (default)
 
 - Adds a **Lambda** plus a **function URL** that serves the built **`spa/dist`** (SPA fallback to `index.html`).
 - CloudFormation output: **`SpaLambdaFunctionUrl`**. Point **`VITE_API_BASE_URL`** at **`HttpApiUrl`** when you build the SPA for that environment.
 - **Bundling** copies prebuilt **`spa/dist`** on the host (run **`npm run spa:build:<stage>`** before synth/deploy).
+
+### `cloudfront`
+
+- Private **S3** origin + **CloudFront** distribution (OAC); **`BucketDeployment`** uploads **`spa/dist`** and invalidates on publish.
+- CloudFormation outputs: **`SpaCloudFrontUrl`**, **`SpaCloudFrontDistributionId`**, **`SpaCloudFrontOriginBucket`**. Point **`VITE_API_BASE_URL`** at **`HttpApiUrl`** when you build the SPA.
+- **Not supported** for **`stage=local`** (LocalStack). Use **`lambda`** or **`none`** locally.
 
 ### `ec2`
 
@@ -112,7 +118,7 @@ The Vite app under **`spa/`** can be published by the same stack. Choose **befor
 
 - Omits SPA infrastructure in CDK (faster **`cdk synth`** when you host the UI yourself).
 
-When **`SPA_HOSTING`** is **`lambda`** or **`ec2`**, run **`npm run spa:build:<stage>`** first so **`spa/dist`** exists; CDK copies it locally (no Docker).
+When **`SPA_HOSTING`** is **`lambda`**, **`cloudfront`**, or **`ec2`**, run **`npm run spa:build:<stage>`** first so **`spa/dist`** exists; CDK copies it locally (no Docker).
 
 ## API
 

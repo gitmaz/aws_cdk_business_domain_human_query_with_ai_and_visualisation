@@ -114,6 +114,14 @@ When **`SPA_HOSTING=lambda`** (default), **`spa/dist` must exist** before synth/
 4. **`$env:SPA_HOSTING = "lambda"`** → **`npm run deploy:dev -- --require-approval never`**
 5. Open **`SpaLambdaFunctionUrl`**. API calls use **`HttpApiUrl`**.
 
+**CloudFront** (same build steps; AWS stages only):
+
+```powershell
+$env:SPA_HOSTING = "cloudfront"
+npm run deploy:dev -- --require-approval never
+# Open SpaCloudFrontUrl; VITE_API_BASE_URL still points at HttpApiUrl.
+```
+
 | Build script | Env file |
 |--------------|----------|
 | **`npm run spa:build:dev`** | **`.env.dev`** |
@@ -128,6 +136,7 @@ When **`SPA_HOSTING=lambda`** (default), **`spa/dist` must exist** before synth/
 |------|-----|
 | Omit SPA infra in CDK | `$env:SPA_HOSTING = "none"` or `-c spaHosting=none` |
 | Publish SPA to Lambda URL | `$env:SPA_HOSTING = "lambda"` (default) |
+| Publish SPA to CloudFront + S3 | `$env:SPA_HOSTING = "cloudfront"` (AWS stages only; not `local`) |
 | Publish SPA to S3 for EC2 sync | `$env:SPA_HOSTING = "ec2"` (+ see README **SPA hosting**) |
 
 `SPA_HOSTING` overrides CDK context **`spaHosting`** when the env var is set.
@@ -148,3 +157,7 @@ open specs:
 
 lambda url:
 https://d4ylggygidffujmf3y5bkhjcsq0ozhkg.lambda-url.ap-southeast-2.on.aws/
+
+
+@@sample build and deploy
+npm run build; Remove-Item Env:SPA_HOSTING -ErrorAction SilentlyContinue; $env:AWS_PROFILE = "my-dev"; $env:AWS_REGION = "ap-southeast-2"; $env:CDK_DEFAULT_ACCOUNT = "154501673607"; $env:CDK_DEFAULT_REGION = "ap-southeast-2"; npm run deploy:dev -- --require-approval never

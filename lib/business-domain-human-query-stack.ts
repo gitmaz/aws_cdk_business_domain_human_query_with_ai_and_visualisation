@@ -361,7 +361,7 @@ export class BusinessDomainHumanQueryStack extends cdk.Stack {
     new CfnOutput(this, "SpaHostingMode", {
       value: spaHostingMode,
       description:
-        "From SPA_HOSTING / -c spaHosting: lambda (Function URL) | ec2 (S3 for EC2 sync) | none (no SPA in stack)",
+        "From SPA_HOSTING / -c spaHosting: none | lambda (Function URL) | cloudfront | ec2 (S3 for EC2 sync)",
     });
     if (spaHostingMode !== "none") {
       new SpaHostingConstruct(this, "SpaHosting", { stage, mode: spaHostingMode });
